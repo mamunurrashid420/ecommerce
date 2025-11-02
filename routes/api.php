@@ -6,6 +6,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\SiteSettingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -14,6 +15,9 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
+
+// Public site settings (for frontend)
+Route::get('/site-settings/public', [SiteSettingController::class, 'public']);
 
 // API routes for frontend
 Route::apiResource('users', UserController::class);
@@ -36,5 +40,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('products', ProductController::class)->except(['index', 'show']);
         Route::get('/orders', [OrderController::class, 'index']);
         Route::put('/orders/{order}', [OrderController::class, 'update']);
+        
+        // Site Settings Management
+        Route::get('/site-settings', [SiteSettingController::class, 'show']);
+        Route::post('/site-settings', [SiteSettingController::class, 'createOrUpdate']);
     });
 });
