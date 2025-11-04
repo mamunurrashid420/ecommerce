@@ -50,9 +50,13 @@ class AuthController extends Controller
             ]);
         }
 
+        // Create a token for the customer
+        $token = $customer->createToken('auth-token')->plainTextToken;
+
         return response()->json([
             'message' => 'Login successful',
             'customer' => $customer,
+            'token' => $token,
         ]);
     }
 

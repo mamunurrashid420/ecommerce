@@ -53,11 +53,19 @@ Returns public site settings for frontend display.
 ### 2. Get Complete Site Settings (Admin)
 **GET** `/api/site-settings`
 
-**Headers:** `Authorization: Bearer {admin_token}`
+**Authentication:** Required (Admin only)
+**Headers:** 
+- `Authorization: Bearer {admin_token}`
+- `Accept: application/json`
 
-Returns all site settings including admin-only fields.
+**Description:** 
+Retrieves all site settings including sensitive admin-only fields like business registration numbers, tax information, and internal configuration settings. This endpoint is protected and only accessible to authenticated admin users.
 
-**Response:**
+**Query Parameters:** None
+
+**Rate Limiting:** 60 requests per minute per user
+
+**Success Response (200):**
 ```json
 {
     "success": true,
@@ -142,7 +150,23 @@ Returns all site settings including admin-only fields.
 ### 3. Create or Update Site Settings (Admin)
 **POST** `/api/site-settings`
 
-**Headers:** `Authorization: Bearer {admin_token}`
+**Authentication:** Required (Admin only)
+**Headers:** 
+- `Authorization: Bearer {admin_token}`
+- `Content-Type: application/json` (for JSON requests)
+- `Content-Type: multipart/form-data` (for file uploads)
+- `Accept: application/json`
+
+**Description:** 
+Creates new site settings if none exist, or updates existing settings. This endpoint supports both JSON payloads and multipart form data for file uploads. All fields are optional - you can update individual settings without affecting others. The system uses an "upsert" pattern, meaning it will create settings if they don't exist or update them if they do.
+
+**HTTP Method:** POST
+**Rate Limiting:** 30 requests per minute per user
+**Max Request Size:** 10MB (due to file upload support)
+
+**Content Types Supported:**
+- `application/json` - For text-based settings
+- `multipart/form-data` - For settings with file uploads
 
 **Request Body (JSON):**
 ```json
@@ -229,6 +253,114 @@ favicon: [file upload - ico/png file]
 social_links[facebook]: "https://facebook.com/mystore"
 social_links[twitter]: "https://twitter.com/mystore"
 ```
+
+**Success Response (200/201):**
+```json
+{
+    "success": true,
+    "message": "Site settings updated successfully",
+    "data": {
+        "id": 1,
+        "title": "My Store",
+        "tagline": "Best products online",
+        "description": "Complete store description",
+        "contact_number": "+1-555-123-4567",
+        "email": "contact@mystore.com",
+        "support_email": "support@mystore.com",
+        "address": "456 New Street, City, State",
+        "business_name": "My Business LLC",
+        "business_registration_number": "REG123456789",
+        "tax_number": "TAX987654321",
+        "header_logo": "http://localhost/storage/logos/header_1699123456.png",
+        "footer_logo": "http://localhost/storage/logos/footer_1699123456.png",
+        "favicon": "http://localhost/storage/logos/favicon_1699123456.ico",
+        "social_links": {
+            "facebook": "https://facebook.com/mystore",
+            "twitter": "https://twitter.com/mystore",
+            "instagram": "https://instagram.com/mystore",
+            "linkedin": "https://linkedin.com/company/mystore",
+            "youtube": "https://youtube.com/mystore",
+            "tiktok": "https://tiktok.com/@mystore",
+            "whatsapp": "+15551234567"
+        },
+        "meta_title": "My Store - Best Products Online",
+        "meta_description": "Shop the best products at My Store",
+        "meta_keywords": "ecommerce, online shopping, products",
+        "currency": "USD",
+        "currency_symbol": "$",
+        "currency_position": "before",
+        "shipping_cost": "9.99",
+        "free_shipping_threshold": "50.00",
+        "tax_rate": "8.25",
+        "tax_inclusive": false,
+        "store_enabled": true,
+        "store_mode": "live",
+        "maintenance_message": "We are currently under maintenance",
+        "business_hours": {
+            "monday": {"open": "09:00", "close": "17:00", "closed": false},
+            "tuesday": {"open": "09:00", "close": "17:00", "closed": false},
+            "wednesday": {"open": "09:00", "close": "17:00", "closed": false},
+            "thursday": {"open": "09:00", "close": "17:00", "closed": false},
+            "friday": {"open": "09:00", "close": "17:00", "closed": false},
+            "saturday": {"open": "10:00", "close": "16:00", "closed": false},
+            "sunday": {"open": "12:00", "close": "16:00", "closed": false}
+        },
+        "payment_methods": {
+            "credit_card": {"enabled": true, "name": "Credit Card"},
+            "paypal": {"enabled": true, "name": "PayPal"},
+            "stripe": {"enabled": true, "name": "Stripe"}
+        },
+        "shipping_methods": {
+            "standard": {"enabled": true, "name": "Standard Shipping", "cost": 9.99, "days": "5-7"},
+            "express": {"enabled": true, "name": "Express Shipping", "cost": 19.99, "days": "2-3"}
+        },
+        "accepted_countries": {
+            "US": "United States",
+            "CA": "Canada",
+            "GB": "United Kingdom"
+        },
+        "email_notifications": true,
+        "sms_notifications": false,
+        "notification_email": "notifications@mystore.com",
+        "google_analytics_id": "GA-123456789",
+        "facebook_pixel_id": "FB-987654321",
+        "custom_scripts": "<script>console.log('Custom script');</script>",
+        "terms_of_service": "By using our website, you agree to our terms...",
+        "privacy_policy": "We respect your privacy and are committed...",
+        "return_policy": "We offer a 30-day return policy...",
+        "shipping_policy": "We ship worldwide and offer various options...",
+        "additional_settings": {
+            "allow_guest_checkout": true,
+            "require_account_activation": false,
+            "min_order_amount": 10.00,
+            "max_order_amount": 10000.00,
+            "inventory_tracking": true,
+            "show_out_of_stock": true,
+            "allow_backorders": false
+        },
+        "created_at": "2025-11-04T10:30:00.000000Z",
+        "updated_at": "2025-11-04T15:45:00.000000Z"
+    }
+}
+```
+
+**File Upload Validation Rules:**
+- `header_logo`: jpeg,png,jpg,gif,svg | max:2048KB
+- `footer_logo`: jpeg,png,jpg,gif,svg | max:2048KB  
+- `favicon`: ico,png | max:1024KB
+
+**Field Validation Rules:**
+- `title`: string, max:255 characters
+- `tagline`: string, max:500 characters
+- `email`: valid email format, max:255 characters
+- `contact_number`: string, max:20 characters
+- `currency`: string, exactly 3 characters (ISO 4217)
+- `currency_symbol`: string, max:10 characters
+- `currency_position`: enum: "before", "after"
+- `tax_rate`: numeric, between 0 and 100
+- `store_mode`: enum: "live", "maintenance", "coming_soon"
+- `social_links`: JSON object with valid URL format for each field
+- `business_hours`: JSON object with time format HH:MM for open/close times
 
 ## All Available Fields
 
