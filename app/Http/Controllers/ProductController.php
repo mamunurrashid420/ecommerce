@@ -3,8 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\ProductMedia;
 use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -38,6 +41,8 @@ class ProductController extends Controller
                 'meta_description' => 'nullable|string|max:500',
                 'meta_keywords' => 'nullable|string|max:500',
                 'image_url' => 'nullable|url',
+                'images' => 'nullable|array|max:10',
+                'images.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:5120',
             ]);
 
             if ($validator->fails()) {
@@ -74,7 +79,16 @@ class ProductController extends Controller
                 $data['updated_by'] = auth()->id();
             }
 
+            DB::beginTransaction();
+            
             $product = Product::create($data);
+
+            // Handle multiple image uploads
+            if ($request->hasFile('images')) {
+                $this->handleImageUploads($product, $request->file('images'));
+            }
+
+            DB::commit();
 
             return response()->json([
                 'success' => true,
@@ -83,6 +97,7 @@ class ProductController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create product',
@@ -235,5 +250,232 @@ class ProductController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Upload multiple images for a product
+     */
+    public function uploadImages(Request $request, Product $product)
+    {
+        try {
+            $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+                'images' => 'required|array|max:10',
+                'images.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+                'alt_texts' => 'nullable|array',
+                'alt_texts.*' => 'nullable|string|max:255',
+                'titles' => 'nullable|array',
+                'titles.*' => 'nullable|string|max:255',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            $uploadedImages = $this->handleImageUploads(
+                $product, 
+                $request->file('images'),
+                $request->input('alt_texts', []),
+                $request->input('titles', [])
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Images uploaded successfully',
+                'data' => [
+                    'product_id' => $product->id,
+                    'uploaded_images' => $uploadedImages,
+                    'total_images' => $product->media()->count()
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload images',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove a specific image from product
+     */
+    public function removeImage(Product $product, ProductMedia $media)
+    {
+        try {
+            // Verify the media belongs to this product
+            if ($media->product_id !== $product->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Image does not belong to this product'
+                ], 403);
+            }
+
+            // Delete physical file if stored locally
+            if ($media->file_path && Storage::exists($media->file_path)) {
+                Storage::delete($media->file_path);
+            }
+
+            $mediaData = [
+                'id' => $media->id,
+                'url' => $media->url,
+                'alt_text' => $media->alt_text
+            ];
+
+            $media->delete();
+
+            // If this was the thumbnail, set the first remaining image as thumbnail
+            if ($media->is_thumbnail) {
+                $firstImage = $product->media()->first();
+                if ($firstImage) {
+                    $firstImage->update(['is_thumbnail' => true]);
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Image removed successfully',
+                'data' => [
+                    'removed_image' => $mediaData,
+                    'remaining_images' => $product->media()->count()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove image',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Set thumbnail image for product
+     */
+    public function setThumbnail(Product $product, ProductMedia $media)
+    {
+        try {
+            // Verify the media belongs to this product
+            if ($media->product_id !== $product->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Image does not belong to this product'
+                ], 403);
+            }
+
+            DB::beginTransaction();
+
+            // Remove thumbnail flag from all images
+            $product->media()->update(['is_thumbnail' => false]);
+
+            // Set new thumbnail
+            $media->update(['is_thumbnail' => true]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Thumbnail set successfully',
+                'data' => [
+                    'thumbnail_id' => $media->id,
+                    'thumbnail_url' => $media->url
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to set thumbnail',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update image details (alt text, title, sort order)
+     */
+    public function updateImage(Request $request, Product $product, ProductMedia $media)
+    {
+        try {
+            // Verify the media belongs to this product
+            if ($media->product_id !== $product->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Image does not belong to this product'
+                ], 403);
+            }
+
+            $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+                'alt_text' => 'nullable|string|max:255',
+                'title' => 'nullable|string|max:255',
+                'sort_order' => 'nullable|integer|min:0',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $media->update($request->only(['alt_text', 'title', 'sort_order']));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Image updated successfully',
+                'data' => $media->fresh()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update image',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Handle multiple image uploads
+     */
+    private function handleImageUploads($product, $images, $altTexts = [], $titles = [])
+    {
+        $uploadedImages = [];
+        $isFirstImage = $product->media()->count() === 0;
+
+        foreach ($images as $index => $image) {
+            $filename = time() . '_' . $index . '_' . $image->getClientOriginalName();
+            $path = $image->storeAs('products/' . $product->id, $filename, 'public');
+            
+            $mediaData = [
+                'product_id' => $product->id,
+                'type' => 'image',
+                'url' => Storage::url($path),
+                'file_path' => $path,
+                'alt_text' => $altTexts[$index] ?? null,
+                'title' => $titles[$index] ?? null,
+                'is_thumbnail' => $isFirstImage && $index === 0, // First image of first upload is thumbnail
+                'sort_order' => $product->media()->count() + $index,
+                'file_size' => $image->getSize(),
+                'mime_type' => $image->getMimeType(),
+            ];
+
+            $productMedia = ProductMedia::create($mediaData);
+            $uploadedImages[] = $productMedia;
+        }
+
+        return $uploadedImages;
     }
 }

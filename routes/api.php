@@ -38,6 +38,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('admin')->group(function () {
         Route::apiResource('customers', CustomerController::class);
         Route::apiResource('products', ProductController::class)->except(['index', 'show']);
+        
+        // Product Image Management
+        Route::post('/products/{product}/images', [ProductController::class, 'uploadImages']);
+        Route::delete('/products/{product}/images/{media}', [ProductController::class, 'removeImage']);
+        Route::put('/products/{product}/images/{media}/thumbnail', [ProductController::class, 'setThumbnail']);
+        Route::put('/products/{product}/images/{media}', [ProductController::class, 'updateImage']);
+        
         Route::get('/orders', [OrderController::class, 'index']);
         Route::put('/orders/{order}', [OrderController::class, 'update']);
         

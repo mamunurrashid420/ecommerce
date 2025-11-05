@@ -21,11 +21,11 @@ Admin endpoints require:
 **POST** `/api/products`
 
 **Authentication:** Required (Admin only)
-**Content-Type:** `application/json`
+**Content-Type:** `application/json` or `multipart/form-data` (for image uploads)
 
-**Description:** Creates a new product with comprehensive validation and automatic slug generation.
+**Description:** Creates a new product with comprehensive validation, automatic slug generation, and support for multiple image uploads.
 
-**Request Body:**
+**JSON Request Body:**
 ```json
 {
     "name": "Conion Seiling Fan",
@@ -47,6 +47,23 @@ Admin endpoints require:
     "meta_keywords": "Hello, This ,is first, Blog post",
     "image_url": "https://example.com/product-image.jpg"
 }
+```
+
+**Multipart Form Data (with images):**
+```
+name: "Conion Seiling Fan"
+description: "Premium ceiling fan with modern design"
+price: "5000"
+stock_quantity: "10"
+sku: "PROD-001"
+category_id: "1"
+brand: "Conion"
+model: "RX00079"
+tags: "ceiling fan,home appliance,cooling"
+is_active: true
+images[]: [File] // Up to 10 image files
+images[]: [File]
+images[]: [File]
 ```
 
 **Success Response (201):**
@@ -203,7 +220,171 @@ Admin endpoints require:
 
 ---
 
-### 3. Delete Product
+### 3. Upload Product Images
+**POST** `/api/products/{id}/images`
+
+**Authentication:** Required (Admin only)
+**Content-Type:** `multipart/form-data`
+
+**Description:** Upload multiple images for an existing product. Supports up to 10 images per request.
+
+**URL Parameters:**
+- `id` (integer) - Product ID
+
+**Form Data:**
+```
+images[]: [File] // Required, up to 10 image files
+images[]: [File]
+alt_texts[]: "Front view of the ceiling fan" // Optional
+alt_texts[]: "Side view showing the blades"
+titles[]: "Conion Fan - Front View" // Optional
+titles[]: "Conion Fan - Side View"
+```
+
+**Success Response (201):**
+```json
+{
+    "success": true,
+    "message": "Images uploaded successfully",
+    "data": {
+        "product_id": 1,
+        "uploaded_images": [
+            {
+                "id": 1,
+                "product_id": 1,
+                "type": "image",
+                "url": "/storage/products/1/1699123456_0_fan-front.jpg",
+                "alt_text": "Front view of the ceiling fan",
+                "title": "Conion Fan - Front View",
+                "is_thumbnail": true,
+                "sort_order": 0,
+                "file_size": 245760,
+                "mime_type": "image/jpeg",
+                "created_at": "2025-11-04T16:30:00.000000Z",
+                "updated_at": "2025-11-04T16:30:00.000000Z"
+            },
+            {
+                "id": 2,
+                "product_id": 1,
+                "type": "image",
+                "url": "/storage/products/1/1699123456_1_fan-side.jpg",
+                "alt_text": "Side view showing the blades",
+                "title": "Conion Fan - Side View",
+                "is_thumbnail": false,
+                "sort_order": 1,
+                "file_size": 198432,
+                "mime_type": "image/jpeg",
+                "created_at": "2025-11-04T16:30:00.000000Z",
+                "updated_at": "2025-11-04T16:30:00.000000Z"
+            }
+        ],
+        "total_images": 2
+    }
+}
+```
+
+---
+
+### 4. Remove Product Image
+**DELETE** `/api/products/{id}/images/{media_id}`
+
+**Authentication:** Required (Admin only)
+
+**Description:** Remove a specific image from a product. Automatically sets a new thumbnail if the removed image was the current thumbnail.
+
+**URL Parameters:**
+- `id` (integer) - Product ID
+- `media_id` (integer) - Media/Image ID
+
+**Success Response (200):**
+```json
+{
+    "success": true,
+    "message": "Image removed successfully",
+    "data": {
+        "removed_image": {
+            "id": 2,
+            "url": "/storage/products/1/1699123456_1_fan-side.jpg",
+            "alt_text": "Side view showing the blades"
+        },
+        "remaining_images": 1
+    }
+}
+```
+
+---
+
+### 5. Set Product Thumbnail
+**PUT** `/api/products/{id}/images/{media_id}/thumbnail`
+
+**Authentication:** Required (Admin only)
+
+**Description:** Set a specific image as the product thumbnail. Removes thumbnail flag from all other images.
+
+**URL Parameters:**
+- `id` (integer) - Product ID
+- `media_id` (integer) - Media/Image ID
+
+**Success Response (200):**
+```json
+{
+    "success": true,
+    "message": "Thumbnail set successfully",
+    "data": {
+        "thumbnail_id": 1,
+        "thumbnail_url": "/storage/products/1/1699123456_0_fan-front.jpg"
+    }
+}
+```
+
+---
+
+### 6. Update Image Details
+**PUT** `/api/products/{id}/images/{media_id}`
+
+**Authentication:** Required (Admin only)
+**Content-Type:** `application/json`
+
+**Description:** Update image metadata like alt text, title, and sort order.
+
+**URL Parameters:**
+- `id` (integer) - Product ID
+- `media_id` (integer) - Media/Image ID
+
+**Request Body:**
+```json
+{
+    "alt_text": "Updated alt text for the image",
+    "title": "Updated title for the image",
+    "sort_order": 5
+}
+```
+
+**Success Response (200):**
+```json
+{
+    "success": true,
+    "message": "Image updated successfully",
+    "data": {
+        "id": 1,
+        "product_id": 1,
+        "type": "image",
+        "url": "/storage/products/1/1699123456_0_fan-front.jpg",
+        "alt_text": "Updated alt text for the image",
+        "title": "Updated title for the image",
+        "is_thumbnail": true,
+        "sort_order": 5,
+        "file_size": 245760,
+        "mime_type": "image/jpeg",
+        "created_at": "2025-11-04T16:30:00.000000Z",
+        "updated_at": "2025-11-04T17:45:00.000000Z"
+    }
+}
+```
+
+---
+
+### 7. Delete Product
 **DELETE** `/api/products/{id}`
 
 **Authentication:** Required (Admin only)
@@ -337,6 +518,70 @@ const createProduct = async (productData, token) => {
     return await response.json();
 };
 
+// Create Product with Images
+const createProductWithImages = async (formData, token) => {
+    const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+        },
+        body: formData // FormData object with product data and images
+    });
+    return await response.json();
+};
+
+// Upload Images to Existing Product
+const uploadProductImages = async (productId, formData, token) => {
+    const response = await fetch(`/api/products/${productId}/images`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+        },
+        body: formData
+    });
+    return await response.json();
+};
+
+// Remove Product Image
+const removeProductImage = async (productId, mediaId, token) => {
+    const response = await fetch(`/api/products/${productId}/images/${mediaId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+        }
+    });
+    return await response.json();
+};
+
+// Set Product Thumbnail
+const setProductThumbnail = async (productId, mediaId, token) => {
+    const response = await fetch(`/api/products/${productId}/images/${mediaId}/thumbnail`, {
+        method: 'PUT',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+        }
+    });
+    return await response.json();
+};
+
+// Update Image Details
+const updateImageDetails = async (productId, mediaId, updateData, token) => {
+    const response = await fetch(`/api/products/${productId}/images/${mediaId}`, {
+        method: 'PUT',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(updateData)
+    });
+    return await response.json();
+};
+
 // Update Product
 const updateProduct = async (productId, updateData, token) => {
     const response = await fetch(`/api/products/${productId}`, {
@@ -361,6 +606,19 @@ const deleteProduct = async (productId, token) => {
         }
     });
     return await response.json();
+};
+
+// Example: Create FormData for image upload
+const createImageFormData = (images, altTexts = [], titles = []) => {
+    const formData = new FormData();
+    
+    images.forEach((image, index) => {
+        formData.append('images[]', image);
+        if (altTexts[index]) formData.append('alt_texts[]', altTexts[index]);
+        if (titles[index]) formData.append('titles[]', titles[index]);
+    });
+    
+    return formData;
 };
 ```
 
@@ -396,6 +654,46 @@ curl -X PUT "http://localhost:8000/api/products/1" \
     "name": "Updated Conion Ceiling Fan",
     "price": "5500",
     "stock_quantity": "15"
+  }'
+```
+
+**Upload Product Images:**
+```bash
+curl -X POST "http://localhost:8000/api/products/1/images" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Accept: application/json" \
+  -F "images[]=@/path/to/image1.jpg" \
+  -F "images[]=@/path/to/image2.jpg" \
+  -F "alt_texts[]=Front view of the ceiling fan" \
+  -F "alt_texts[]=Side view showing the blades" \
+  -F "titles[]=Conion Fan - Front View" \
+  -F "titles[]=Conion Fan - Side View"
+```
+
+**Remove Product Image:**
+```bash
+curl -X DELETE "http://localhost:8000/api/products/1/images/2" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Accept: application/json"
+```
+
+**Set Product Thumbnail:**
+```bash
+curl -X PUT "http://localhost:8000/api/products/1/images/1/thumbnail" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Accept: application/json"
+```
+
+**Update Image Details:**
+```bash
+curl -X PUT "http://localhost:8000/api/products/1/images/1" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "alt_text": "Updated alt text for the image",
+    "title": "Updated title for the image",
+    "sort_order": 5
   }'
 ```
 
