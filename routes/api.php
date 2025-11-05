@@ -24,7 +24,13 @@ Route::apiResource('users', UserController::class);
 Route::post('users/{user}/ban', [UserController::class, 'ban']);
 Route::post('users/{user}/unban', [UserController::class, 'unban']);
 Route::get('users-stats', [UserController::class, 'stats']);
-Route::apiResource('categories', CategoryController::class);
+
+// Public Category routes
+Route::get('/categories', [CategoryController::class, 'index']);
+Route::get('/categories/dropdown', [CategoryController::class, 'dropdown']);
+Route::get('/categories/featured', [CategoryController::class, 'featured']);
+Route::get('/categories/tree', [CategoryController::class, 'tree']);
+Route::get('/categories/{category}', [CategoryController::class, 'show']);
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -44,6 +50,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/products/{product}/images/{media}', [ProductController::class, 'removeImage']);
         Route::put('/products/{product}/images/{media}/thumbnail', [ProductController::class, 'setThumbnail']);
         Route::put('/products/{product}/images/{media}', [ProductController::class, 'updateImage']);
+        
+        // Admin Category Management
+        Route::post('/categories', [CategoryController::class, 'store']);
+        Route::put('/categories/{category}', [CategoryController::class, 'update']);
+        Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
+        Route::post('/categories/sort-order', [CategoryController::class, 'updateSortOrder']);
+        Route::put('/categories/{category}/toggle-featured', [CategoryController::class, 'toggleFeatured']);
+        Route::put('/categories/{category}/toggle-active', [CategoryController::class, 'toggleActive']);
         
         Route::get('/orders', [OrderController::class, 'index']);
         Route::put('/orders/{order}', [OrderController::class, 'update']);
