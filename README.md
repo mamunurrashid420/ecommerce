@@ -3,6 +3,7 @@
 A full-stack e-commerce platform built with Laravel (backend API) and Next.js (frontend).
 
 ## Features
+## test
 
 ### Backend (Laravel)
 - **Authentication**: Customer registration and login with role-based access (admin/customer)
