@@ -34,9 +34,9 @@ class SiteSettingController extends Controller
                     'business_name' => $settings->business_name,
                     'business_registration_number' => $settings->business_registration_number,
                     'tax_number' => $settings->tax_number,
-                    'header_logo' => $settings->header_logo ? Storage::url($settings->header_logo) : null,
-                    'footer_logo' => $settings->footer_logo ? Storage::url($settings->footer_logo) : null,
-                    'favicon' => $settings->favicon ? Storage::url($settings->favicon) : null,
+                    'header_logo' => $settings->header_logo_url,
+                    'footer_logo' => $settings->footer_logo_url,
+                    'favicon' => $settings->favicon_url,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -86,7 +86,8 @@ class SiteSettingController extends Controller
     public function createOrUpdate(Request $request): JsonResponse
     {
         try {
-            $validator = Validator::make($request->all(), [
+            // Prepare validation rules
+            $rules = [
                 'title' => 'nullable|string|max:255',
                 'tagline' => 'nullable|string|max:255',
                 'description' => 'nullable|string',
@@ -97,9 +98,6 @@ class SiteSettingController extends Controller
                 'business_name' => 'nullable|string|max:255',
                 'business_registration_number' => 'nullable|string|max:100',
                 'tax_number' => 'nullable|string|max:100',
-                'header_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-                'footer_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-                'favicon' => 'nullable|image|mimes:ico,png|max:1024',
                 'social_links' => 'nullable|array',
                 'social_links.facebook' => 'nullable|url',
                 'social_links.twitter' => 'nullable|url',
@@ -115,7 +113,7 @@ class SiteSettingController extends Controller
                 'currency_symbol' => 'nullable|string|max:10',
                 'currency_position' => 'nullable|in:before,after',
                 'shipping_cost' => 'nullable|numeric|min:0',
-                'free_shipping_threshold' => 'nullable|nullable|numeric|min:0',
+                'free_shipping_threshold' => 'nullable|numeric|min:0',
                 'tax_rate' => 'nullable|numeric|min:0|max:100',
                 'tax_inclusive' => 'nullable|boolean',
                 'store_enabled' => 'nullable|boolean',
@@ -136,7 +134,29 @@ class SiteSettingController extends Controller
                 'return_policy' => 'nullable|string',
                 'shipping_policy' => 'nullable|string',
                 'additional_settings' => 'nullable|array',
-            ]);
+            ];
+
+            // Add conditional validation for logo fields
+            // Only validate as image if it's actually a file upload, ignore if it's a string (existing path)
+            if ($request->hasFile('header_logo')) {
+                $rules['header_logo'] = 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+            } elseif ($request->has('header_logo') && is_string($request->header_logo)) {
+                $rules['header_logo'] = 'nullable|string';
+            }
+
+            if ($request->hasFile('footer_logo')) {
+                $rules['footer_logo'] = 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+            } elseif ($request->has('footer_logo') && is_string($request->footer_logo)) {
+                $rules['footer_logo'] = 'nullable|string';
+            }
+
+            if ($request->hasFile('favicon')) {
+                $rules['favicon'] = 'nullable|image|mimes:ico,png|max:1024';
+            } elseif ($request->has('favicon') && is_string($request->favicon)) {
+                $rules['favicon'] = 'nullable|string';
+            }
+
+            $validator = Validator::make($request->all(), $rules);
 
             if ($validator->fails()) {
                 return response()->json([
@@ -188,9 +208,9 @@ class SiteSettingController extends Controller
                     'business_name' => $settings->business_name,
                     'business_registration_number' => $settings->business_registration_number,
                     'tax_number' => $settings->tax_number,
-                    'header_logo' => $settings->header_logo ? Storage::url($settings->header_logo) : null,
-                    'footer_logo' => $settings->footer_logo ? Storage::url($settings->footer_logo) : null,
-                    'favicon' => $settings->favicon ? Storage::url($settings->favicon) : null,
+                    'header_logo' => $settings->header_logo_url,
+                    'footer_logo' => $settings->footer_logo_url,
+                    'favicon' => $settings->favicon_url,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -252,9 +272,9 @@ class SiteSettingController extends Controller
                     'email' => $settings->email,
                     'address' => $settings->address,
                     'business_name' => $settings->business_name,
-                    'header_logo' => $settings->header_logo ? Storage::url($settings->header_logo) : null,
-                    'footer_logo' => $settings->footer_logo ? Storage::url($settings->footer_logo) : null,
-                    'favicon' => $settings->favicon ? Storage::url($settings->favicon) : null,
+                    'header_logo' => $settings->header_logo_url,
+                    'footer_logo' => $settings->footer_logo_url,
+                    'favicon' => $settings->favicon_url,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,

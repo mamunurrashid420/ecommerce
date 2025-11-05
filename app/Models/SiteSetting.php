@@ -135,6 +135,59 @@ class SiteSetting extends Model
     }
 
     /**
+     * Get full URL for header logo
+     */
+    protected function headerLogoUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->getFullUrl($this->header_logo)
+        );
+    }
+
+    /**
+     * Get full URL for footer logo
+     */
+    protected function footerLogoUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->getFullUrl($this->footer_logo)
+        );
+    }
+
+    /**
+     * Get full URL for favicon
+     */
+    protected function faviconUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->getFullUrl($this->favicon)
+        );
+    }
+
+    /**
+     * Helper method to get full URL from path
+     */
+    private function getFullUrl($path)
+    {
+        if (empty($path)) {
+            return null;
+        }
+
+        // If URL already starts with http/https, return as is
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            return $path;
+        }
+
+        // If path starts with /storage, prepend the app URL
+        if (str_starts_with($path, '/storage')) {
+            return config('app.url') . $path;
+        }
+
+        // If path doesn't start with /, treat as storage path and prepend
+        return config('app.url') . '/storage/' . ltrim($path, '/');
+    }
+
+    /**
      * Format price with currency
      */
     public function formatPrice($amount)
