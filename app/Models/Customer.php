@@ -11,7 +11,8 @@ class Customer extends Authenticatable
     use HasApiTokens, Notifiable;
 
     protected $fillable = [
-        'name', 'email', 'password', 'phone', 'address', 'role', 'otp', 'otp_expires_at', 'profile_picture'
+        'name', 'email', 'password', 'phone', 'address', 'role', 'otp', 'otp_expires_at', 'profile_picture',
+        'is_banned', 'is_suspended', 'banned_at', 'suspended_at', 'ban_reason', 'suspend_reason'
     ];
 
     protected $hidden = [
@@ -22,6 +23,10 @@ class Customer extends Authenticatable
         'email_verified_at' => 'datetime',
         'otp_expires_at' => 'datetime',
         'password' => 'hashed',
+        'is_banned' => 'boolean',
+        'is_suspended' => 'boolean',
+        'banned_at' => 'datetime',
+        'suspended_at' => 'datetime',
     ];
 
     protected $appends = [
@@ -48,5 +53,29 @@ class Customer extends Authenticatable
     public function isAdmin()
     {
         return $this->role === 'admin';
+    }
+
+    /**
+     * Check if customer is banned
+     */
+    public function isBanned()
+    {
+        return $this->is_banned === true;
+    }
+
+    /**
+     * Check if customer is suspended
+     */
+    public function isSuspended()
+    {
+        return $this->is_suspended === true;
+    }
+
+    /**
+     * Check if customer can make purchases
+     */
+    public function canMakePurchases()
+    {
+        return !$this->isBanned() && !$this->isSuspended();
     }
 }

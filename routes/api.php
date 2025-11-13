@@ -4,6 +4,8 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CustomerAuthController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\AdminPurchaseController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\CategoryController;
@@ -24,6 +26,12 @@ Route::prefix('customer')->group(function () {
 });
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
+
+// Public Purchase Management Routes (No authentication required)
+Route::prefix('purchase')->group(function () {
+    Route::post('/check-availability', [PurchaseController::class, 'checkAvailability']);
+    Route::post('/summary', [PurchaseController::class, 'getSummary']);
+});
 
 // Public site settings (for frontend)
 Route::get('/site-settings/public', [SiteSettingController::class, 'public']);
@@ -52,6 +60,12 @@ Route::middleware('customer')->group(function () {
     Route::get('/orders', [OrderController::class, 'customerOrders']);
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
+    
+    // Customer Purchase Management Routes
+    Route::prefix('purchase')->group(function () {
+        Route::post('/validate', [PurchaseController::class, 'validateItems']);
+        Route::post('/summary', [PurchaseController::class, 'getSummary']);
+    });
 });
 
 // Protected routes (Admin/User authentication)
@@ -64,7 +78,15 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Admin only routes
     Route::middleware('admin')->group(function () {
+        // Customer Management
         Route::apiResource('customers', CustomerController::class);
+        Route::post('/customers/{customer}/ban', [CustomerController::class, 'ban']);
+        Route::post('/customers/{customer}/unban', [CustomerController::class, 'unban']);
+        Route::post('/customers/{customer}/suspend', [CustomerController::class, 'suspend']);
+        Route::post('/customers/{customer}/unsuspend', [CustomerController::class, 'unsuspend']);
+        Route::get('/customers/{customer}/orders', [CustomerController::class, 'orderHistory']);
+        Route::get('/customers-search', [CustomerController::class, 'search']);
+        
         Route::apiResource('products', ProductController::class)->except(['index', 'show']);
         // Product Management (Admin)
         Route::post('/products', [ProductController::class, 'store']);
@@ -87,6 +109,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // Admin Order Management
         Route::get('/orders', [OrderController::class, 'index']);
+        Route::get('/orders/{order}', [OrderController::class, 'show']);
         Route::get('/orders/stats', [OrderController::class, 'stats']);
         Route::put('/orders/{order}', [OrderController::class, 'update']);
         Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
@@ -114,6 +137,15 @@ Route::middleware('auth:sanctum')->group(function () {
             
             // Inventory history
             Route::get('/products/{product}/history', [InventoryController::class, 'getHistory']);
+        });
+        
+        // Admin Product Purchase Management (Supplier Purchases)
+        Route::prefix('admin-purchases')->group(function () {
+            Route::post('/', [AdminPurchaseController::class, 'recordPurchase']);
+            Route::post('/bulk', [AdminPurchaseController::class, 'recordBulkPurchases']);
+            Route::get('/history', [AdminPurchaseController::class, 'getAllPurchaseHistory']);
+            Route::get('/products/{product}/history', [AdminPurchaseController::class, 'getProductPurchaseHistory']);
+            Route::get('/stats', [AdminPurchaseController::class, 'getPurchaseStats']);
         });
     });
 });

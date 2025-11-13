@@ -7,6 +7,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Customer;
 use App\Services\InventoryService;
+use App\Services\PurchaseService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Exception;
@@ -14,10 +15,12 @@ use Exception;
 class OrderService
 {
     protected $inventoryService;
+    protected $purchaseService;
 
-    public function __construct(InventoryService $inventoryService)
+    public function __construct(InventoryService $inventoryService, PurchaseService $purchaseService)
     {
         $this->inventoryService = $inventoryService;
+        $this->purchaseService = $purchaseService;
     }
 
     /**
@@ -36,38 +39,28 @@ class OrderService
             // Validate customer exists
             $customer = Customer::findOrFail($customerId);
             
+            // Check if customer is banned or suspended
+            if ($customer->isBanned()) {
+                throw new Exception("Your account has been banned. Reason: " . ($customer->ban_reason ?? 'No reason provided'));
+            }
+            
+            if ($customer->isSuspended()) {
+                throw new Exception("Your account has been suspended. Reason: " . ($customer->suspend_reason ?? 'No reason provided'));
+            }
+            
+            // Validate customer can make purchase
+            $this->purchaseService->validateCustomer($customerId);
+            
+            // Validate purchase items with database locks to prevent race conditions
+            $items = $data['items'];
+            $validation = $this->purchaseService->validatePurchaseItemsWithLock($items);
+            $validatedItems = $validation['validated_items'];
+            
             // Generate unique order number
             $orderNumber = $this->generateOrderNumber();
             
-            // Validate and process order items
-            $items = $data['items'];
-            $orderItems = [];
-            $totalAmount = 0;
-            
-            foreach ($items as $item) {
-                $product = Product::lockForUpdate()->findOrFail($item['product_id']);
-                
-                // Check if product is active
-                if (!$product->is_active) {
-                    throw new Exception("Product '{$product->name}' is not available");
-                }
-                
-                // Check stock availability
-                if (!$this->inventoryService->hasSufficientStock($product->id, $item['quantity'])) {
-                    throw new Exception("Insufficient stock for product '{$product->name}'. Available: {$product->stock_quantity}, Requested: {$item['quantity']}");
-                }
-                
-                $price = $product->price;
-                $itemTotal = $price * $item['quantity'];
-                $totalAmount += $itemTotal;
-                
-                $orderItems[] = [
-                    'product_id' => $product->id,
-                    'quantity' => $item['quantity'],
-                    'price' => $price,
-                    'total' => $itemTotal,
-                ];
-            }
+            // Calculate total amount from validated items
+            $totalAmount = $validation['total_amount'];
             
             // Create order
             $order = Order::create([
@@ -80,7 +73,7 @@ class OrderService
             ]);
             
             // Create order items and reserve stock
-            foreach ($orderItems as $itemData) {
+            foreach ($validatedItems as $itemData) {
                 OrderItem::create([
                     'order_id' => $order->id,
                     'product_id' => $itemData['product_id'],
@@ -99,10 +92,17 @@ class OrderService
             
             DB::commit();
             
-            return [
+            $response = [
                 'success' => true,
                 'order' => $order->load(['customer', 'orderItems.product']),
             ];
+            
+            // Include warnings if any
+            if (!empty($validation['warnings'])) {
+                $response['warnings'] = $validation['warnings'];
+            }
+            
+            return $response;
             
         } catch (Exception $e) {
             DB::rollBack();
