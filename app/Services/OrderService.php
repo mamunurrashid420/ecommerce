@@ -6,6 +6,8 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Customer;
+use App\Models\User;
+use App\Notifications\NewOrderNotification;
 use App\Services\InventoryService;
 use App\Services\PurchaseService;
 use Illuminate\Support\Facades\DB;
@@ -92,9 +94,29 @@ class OrderService
             
             DB::commit();
             
+            // Load customer relationship for notifications
+            $order->load('customer');
+            
+            // Send notifications to all admin users
+            try {
+                $adminUsers = User::where('role', 'admin')->get();
+                foreach ($adminUsers as $admin) {
+                    $admin->notify(new NewOrderNotification($order));
+                }
+            } catch (Exception $e) {
+                // Log notification error but don't fail the order creation
+                Log::warning('Failed to send order notification to admin users', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+            
+            // Load full order relationships for response
+            $order->load(['customer', 'orderItems.product']);
+            
             $response = [
                 'success' => true,
-                'order' => $order->load(['customer', 'orderItems.product']),
+                'order' => $order,
             ];
             
             // Include warnings if any

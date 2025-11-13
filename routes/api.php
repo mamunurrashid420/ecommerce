@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\SiteSettingController;
 use App\Http\Controllers\Api\InventoryController;
+use App\Http\Controllers\Api\NotificationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -75,6 +76,19 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Site Settings (accessible to all authenticated users)
     Route::get('/site-settings', [SiteSettingController::class, 'show']);
+    
+    // Notifications (accessible to all authenticated users)
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread', [NotificationController::class, 'unread']);
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::get('/stats', [NotificationController::class, 'stats']);
+        Route::get('/{id}', [NotificationController::class, 'show']);
+        Route::put('/{id}/read', [NotificationController::class, 'markAsRead']);
+        Route::put('/read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+        Route::delete('/', [NotificationController::class, 'deleteAll']);
+    });
     
     // Admin only routes
     Route::middleware('admin')->group(function () {
