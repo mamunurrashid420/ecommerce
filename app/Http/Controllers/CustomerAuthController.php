@@ -162,24 +162,23 @@ class CustomerAuthController extends Controller
 
         // Get authenticated customer (middleware ensures it's a Customer instance)
         $customer = $request->user();
-        
-        return response()->json(' na afsoidm fosidmf o');
 
         if (!$customer || !($customer instanceof Customer)) {
             return response()->json([
                 'message' => 'Unauthenticated. Customer authentication required.',
             ], 401);
         }
-        
+        return response()->json($request->all());
         // Get the allowed fields from the request
-        // Try only() first, then fallback to json() if needed
-        $updateData = $request->only(['name', 'email', 'address']);
+        // Handle both JSON and form data requests
+        $allData = $request->all();
         
-        // If only() returned all nulls, try json() method (for JSON requests)
-        if (empty(array_filter($updateData, function($v) { return $v !== null; })) && $request->isJson()) {
-            $jsonData = $request->json()->all();
-            $updateData = array_intersect_key($jsonData, array_flip(['name', 'email', 'address']));
+        // If all() is empty but we have JSON content, try json()->all()
+        if (empty($allData) && $request->isJson() && $request->json()) {
+            $allData = $request->json()->all();
         }
+        
+        $updateData = array_intersect_key($allData, array_flip(['name', 'email', 'address']));
         
         // Remove only null values (fields not in request)
         // Keep all non-null values including empty strings
