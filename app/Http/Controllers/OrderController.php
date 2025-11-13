@@ -2,77 +2,288 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\OrderService;
 use App\Models\Order;
-use App\Models\OrderItem;
-use App\Models\Product;
+use App\Models\Customer;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
-    public function index()
+    protected $orderService;
+
+    public function __construct(OrderService $orderService)
     {
-        $orders = Order::with(['customer', 'orderItems.product'])->latest()->paginate(10);
-        return response()->json($orders);
+        $this->orderService = $orderService;
     }
 
+    /**
+     * Get all orders (Admin only)
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function index(Request $request)
+    {
+        try {
+            $filters = [
+                'status' => $request->get('status'),
+                'customer_id' => $request->get('customer_id'),
+                'search' => $request->get('search'),
+                'date_from' => $request->get('date_from'),
+                'date_to' => $request->get('date_to'),
+                'sort_by' => $request->get('sort_by', 'created_at'),
+                'sort_order' => $request->get('sort_order', 'desc'),
+            ];
+
+            $perPage = $request->get('per_page', 15);
+            $result = $this->orderService->getOrders($filters, $perPage);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve orders',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get customer's orders
+     * If admin accesses this route, they get all orders (same as index)
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function customerOrders(Request $request)
+    {
+        try {
+            // If admin, return all orders (same as index method)
+            if ($this->isAdmin()) {
+                return $this->index($request);
+            }
+            
+            // For customers, return only their orders
+            $customer = $this->getAuthenticatedCustomer();
+            
+            $filters = [
+                'status' => $request->get('status'),
+                'search' => $request->get('search'),
+                'sort_by' => $request->get('sort_by', 'created_at'),
+                'sort_order' => $request->get('sort_order', 'desc'),
+            ];
+
+            $perPage = $request->get('per_page', 15);
+            $result = $this->orderService->getCustomerOrders($customer->id, $filters, $perPage);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve orders',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a new order
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function store(Request $request)
     {
-        $request->validate([
-            'customer_id' => 'required|exists:customers,id',
-            'shipping_address' => 'required|string',
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|integer|min:1',
-        ]);
-
-        return DB::transaction(function () use ($request) {
-            $totalAmount = 0;
-            $orderNumber = 'ORD-' . time() . '-' . rand(1000, 9999);
-
-            $order = Order::create([
-                'order_number' => $orderNumber,
-                'customer_id' => $request->customer_id,
-                'total_amount' => 0,
-                'shipping_address' => $request->shipping_address,
-                'notes' => $request->notes,
+        try {
+            $request->validate([
+                'shipping_address' => 'required|string|max:500',
+                'items' => 'required|array|min:1',
+                'items.*.product_id' => 'required|exists:products,id',
+                'items.*.quantity' => 'required|integer|min:1',
+                'notes' => 'nullable|string|max:1000',
             ]);
 
-            foreach ($request->items as $item) {
-                $product = Product::findOrFail($item['product_id']);
-                $price = $product->price;
-                $total = $price * $item['quantity'];
-                $totalAmount += $total;
+            $customer = $this->getAuthenticatedCustomer();
 
-                OrderItem::create([
-                    'order_id' => $order->id,
-                    'product_id' => $product->id,
-                    'quantity' => $item['quantity'],
-                    'price' => $price,
-                    'total' => $total,
-                ]);
+            $data = [
+                'shipping_address' => $request->shipping_address,
+                'items' => $request->items,
+                'notes' => $request->notes,
+            ];
 
-                // Update stock
-                $product->decrement('stock_quantity', $item['quantity']);
-            }
+            $result = $this->orderService->createOrder($data, $customer->id);
 
-            $order->update(['total_amount' => $totalAmount]);
-            return response()->json($order->load(['customer', 'orderItems.product']), 201);
-        });
+            return response()->json([
+                'success' => true,
+                'message' => 'Order created successfully',
+                'data' => $result['order']
+            ], 201);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create order',
+                'error' => $e->getMessage()
+            ], 400);
+        }
     }
 
+    /**
+     * Get a single order
+     * 
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function show(Order $order)
     {
-        return response()->json($order->load(['customer', 'orderItems.product']));
+        try {
+            // If admin, allow access to any order
+            if ($this->isAdmin()) {
+                $result = $this->orderService->getOrder($order->id);
+            } else {
+                // For customers, verify ownership
+                $customer = $this->getAuthenticatedCustomer();
+                $result = $this->orderService->getOrder($order->id, $customer->id);
+            }
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], $e->getMessage() === 'Unauthorized access to this order' ? 403 : 404);
+        }
     }
 
+    /**
+     * Update order status (Admin only)
+     * 
+     * @param Request $request
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function update(Request $request, Order $order)
     {
-        $request->validate([
-            'status' => 'required|in:pending,processing,shipped,delivered,cancelled',
-        ]);
+        try {
+            $request->validate([
+                'status' => 'required|in:pending,processing,shipped,delivered,cancelled',
+            ]);
 
-        $order->update(['status' => $request->status]);
-        return response()->json($order->load(['customer', 'orderItems.product']));
+            $result = $this->orderService->updateOrderStatus($order->id, $request->status);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Order status updated successfully',
+                'data' => $result['order']
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Delete an order (Admin only)
+     * 
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function destroy(Order $order)
+    {
+        try {
+            $result = $this->orderService->deleteOrder($order->id);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], $e->getMessage() === 'Cannot delete delivered orders. Consider cancelling instead.' ? 409 : 500);
+        }
+    }
+
+    /**
+     * Get order statistics (Admin only)
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function stats(Request $request)
+    {
+        try {
+            $filters = [
+                'date_from' => $request->get('date_from'),
+                'date_to' => $request->get('date_to'),
+            ];
+
+            $result = $this->orderService->getOrderStats($filters);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve order statistics',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get authenticated customer
+     * 
+     * @return Customer
+     * @throws \Exception
+     */
+    protected function getAuthenticatedCustomer()
+    {
+        $user = auth()->user();
+        
+        if (!$user) {
+            throw new \Exception('Unauthenticated');
+        }
+
+        // Check if authenticated user is a Customer model
+        if ($user instanceof Customer) {
+            return $user;
+        }
+
+        // If it's a User model (admin), we can't create orders as admin
+        // This should not happen in customer routes, but handle it gracefully
+        throw new \Exception('Customer authentication required');
+    }
+
+    /**
+     * Check if authenticated user is admin
+     * 
+     * @return bool
+     */
+    protected function isAdmin()
+    {
+        $user = auth()->user();
+        
+        if (!$user) {
+            return false;
+        }
+
+        // Check if it's a User model with admin role
+        if ($user instanceof \App\Models\User) {
+            return $user->isAdmin();
+        }
+
+        return false;
     }
 }

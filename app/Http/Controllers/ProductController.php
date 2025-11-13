@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\ProductMedia;
 use App\Models\Category;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
@@ -73,10 +74,14 @@ class ProductController extends Controller
                 $data['tags'] = array_map('trim', explode(',', $data['tags']));
             }
 
-            // Set created_by if authenticated
+            // Set created_by and updated_by if authenticated and user exists
             if (auth()->check()) {
-                $data['created_by'] = auth()->id();
-                $data['updated_by'] = auth()->id();
+                $userId = auth()->id();
+                // Only set if user exists in database (fields are nullable)
+                if ($userId && User::where('id', $userId)->exists()) {
+                    $data['created_by'] = $userId;
+                    $data['updated_by'] = $userId;
+                }
             }
 
             DB::beginTransaction();
@@ -178,9 +183,13 @@ class ProductController extends Controller
                 $data['tags'] = array_map('trim', explode(',', $data['tags']));
             }
 
-            // Set updated_by if authenticated
+            // Set updated_by if authenticated and user exists
             if (auth()->check()) {
-                $data['updated_by'] = auth()->id();
+                $userId = auth()->id();
+                // Only set if user exists in database (field is nullable)
+                if ($userId && User::where('id', $userId)->exists()) {
+                    $data['updated_by'] = $userId;
+                }
             }
 
             $product->update($data);

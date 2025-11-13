@@ -10,6 +10,37 @@ use Illuminate\Http\JsonResponse;
 class UserController extends Controller
 {
     /**
+     * Store a newly created user.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:8',
+            'role' => 'required|in:customer,admin',
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string',
+            'status' => 'sometimes|in:active,inactive,banned',
+        ]);
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => \Illuminate\Support\Facades\Hash::make($request->password),
+            'role' => $request->role,
+            'phone' => $request->phone,
+            'address' => $request->address,
+            'status' => $request->status ?? 'active',
+        ]);
+
+        return response()->json([
+            'message' => 'User created successfully',
+            'data' => $user
+        ], 201);
+    }
+
+    /**
      * Display a listing of users with pagination and filtering.
      */
     public function index(Request $request): JsonResponse

@@ -42,7 +42,7 @@ return [
         ],
         'sanctum' => [
             'driver' => 'sanctum',
-            'provider' => 'users',
+            'provider' => 'users', // Default provider, but Sanctum resolves models from tokenable_type
         ],
     ],
 
@@ -66,13 +66,12 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', App\Models\Customer::class),
+            'model' => App\Models\User::class,
         ],
-
-        // 'users' => [
-        //     'driver' => 'database',
-        //     'table' => 'users',
-        // ],
+        'customers' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Customer::class,
+        ],
     ],
 
     /*

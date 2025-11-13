@@ -39,6 +39,11 @@ class Product extends Model
         return $this->hasMany(ProductCustomField::class)->orderBy('sort_order');
     }
 
+    public function inventoryHistory()
+    {
+        return $this->hasMany(InventoryHistory::class)->orderBy('created_at', 'desc');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

@@ -2,39 +2,49 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Customer;
+use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    /**
+     * Register admin/user with email and password
+     */
     public function register(Request $request)
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:customers',
+            'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
+            'role' => 'nullable|in:admin,customer',
         ]);
 
-        $customer = Customer::create([
+        $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'phone' => $request->phone,
             'address' => $request->address,
-            'role' => 'customer',
+            'role' => $request->role ?? 'customer',
+            'status' => 'active',
         ]);
+
+        $token = $user->createToken('auth-token')->plainTextToken;
 
         return response()->json([
             'message' => 'Registration successful',
-            'customer' => $customer,
+            'user' => $user,
+            'token' => $token,
         ], 201);
     }
 
+    /**
+     * Login admin/user with email and password
+     */
     public function login(Request $request)
     {
         $request->validate([
@@ -42,26 +52,40 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        $customer = Customer::where('email', $request->email)->first();
+        $user = User::where('email', $request->email)->first();
 
-        if (!$customer || !Hash::check($request->password, $customer->password)) {
+        if (!$user || !Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        // Create a token for the customer
-        $token = $customer->createToken('auth-token')->plainTextToken;
+        // Check if user is active
+        if ($user->status !== 'active') {
+            throw ValidationException::withMessages([
+                'email' => ['Your account is not active.'],
+            ]);
+        }
+
+        // Update last login
+        $user->update(['last_login_at' => now()]);
+
+        // Create a token for the user
+        $token = $user->createToken('auth-token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login successful',
-            'customer' => $customer,
+            'user' => $user,
             'token' => $token,
         ]);
     }
 
+    /**
+     * Logout user
+     */
     public function logout(Request $request)
     {
+        $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Logged out successfully']);
     }
 }

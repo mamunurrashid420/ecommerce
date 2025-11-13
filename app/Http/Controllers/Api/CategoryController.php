@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
@@ -174,10 +175,14 @@ class CategoryController extends Controller
                 $data['image_url'] = Storage::url($path);
             }
 
-            // Set created_by and updated_by if authenticated
+            // Set created_by and updated_by if authenticated and user exists
             if (auth()->check()) {
-                $data['created_by'] = auth()->id();
-                $data['updated_by'] = auth()->id();
+                $userId = auth()->id();
+                // Only set if user exists in database (fields are nullable)
+                if ($userId && User::where('id', $userId)->exists()) {
+                    $data['created_by'] = $userId;
+                    $data['updated_by'] = $userId;
+                }
             }
 
             // Set default sort_order if not provided
@@ -332,9 +337,13 @@ class CategoryController extends Controller
                 $data['image_url'] = Storage::url($path);
             }
 
-            // Set updated_by if authenticated
+            // Set updated_by if authenticated and user exists
             if (auth()->check()) {
-                $data['updated_by'] = auth()->id();
+                $userId = auth()->id();
+                // Only set if user exists in database (field is nullable)
+                if ($userId && User::where('id', $userId)->exists()) {
+                    $data['updated_by'] = $userId;
+                }
             }
 
             $category->update($data);
@@ -466,10 +475,14 @@ class CategoryController extends Controller
     public function toggleFeatured(Category $category)
     {
         try {
-            $category->update([
-                'is_featured' => !$category->is_featured,
-                'updated_by' => auth()->id()
-            ]);
+            $updateData = ['is_featured' => !$category->is_featured];
+            if (auth()->check()) {
+                $userId = auth()->id();
+                if ($userId && User::where('id', $userId)->exists()) {
+                    $updateData['updated_by'] = $userId;
+                }
+            }
+            $category->update($updateData);
 
             return response()->json([
                 'success' => true,
@@ -495,10 +508,14 @@ class CategoryController extends Controller
     public function toggleActive(Category $category)
     {
         try {
-            $category->update([
-                'is_active' => !$category->is_active,
-                'updated_by' => auth()->id()
-            ]);
+            $updateData = ['is_active' => !$category->is_active];
+            if (auth()->check()) {
+                $userId = auth()->id();
+                if ($userId && User::where('id', $userId)->exists()) {
+                    $updateData['updated_by'] = $userId;
+                }
+            }
+            $category->update($updateData);
 
             return response()->json([
                 'success' => true,
