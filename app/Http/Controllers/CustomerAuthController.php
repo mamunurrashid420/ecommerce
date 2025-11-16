@@ -149,17 +149,29 @@ class CustomerAuthController extends Controller
     }
 
     /**
+     * Get authenticated customer profile
+     */
+    public function profile(Request $request)
+    {
+        $customer = $request->user();
+
+        if (!$customer || !($customer instanceof Customer)) {
+            return response()->json([
+                'message' => 'Unauthenticated. Customer authentication required.',
+            ], 401);
+        }
+
+        return response()->json([
+            'data' => $customer
+        ]);
+    }
+
+    /**
      * Update customer profile
      */
     public function updateProfile(Request $request)
     {
-        $request->validate([
-            'name' => 'nullable|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'address' => 'nullable|string',
-            'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-        ]);
-
+        // return $request;
         // Get authenticated customer (middleware ensures it's a Customer instance)
         $customer = $request->user();
 
@@ -168,30 +180,24 @@ class CustomerAuthController extends Controller
                 'message' => 'Unauthenticated. Customer authentication required.',
             ], 401);
         }
-        return response()->json($request->all());
-        // Get the allowed fields from the request
-        // Handle both JSON and form data requests
-        $allData = $request->all();
+
+        // Validate request data
+        $request->validate([
+            'name' => 'sometimes|nullable|string|max:255',
+            'email' => 'sometimes|nullable|email|max:255|unique:customers,email,' . $customer->id,
+            'address' => 'sometimes|nullable|string',
+            'profile_picture' => 'sometimes|nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ]);
+
+        // Get update data - use only() which works for both JSON and form data
+        // This will only include fields that are present in the request
+        $updateData = $request->only(['name', 'email', 'address']);
         
-        // If all() is empty but we have JSON content, try json()->all()
-        if (empty($allData) && $request->isJson() && $request->json()) {
-            $allData = $request->json()->all();
-        }
-        
-        $updateData = array_intersect_key($allData, array_flip(['name', 'email', 'address']));
-        
-        // Remove only null values (fields not in request)
-        // Keep all non-null values including empty strings
+        // Remove null values (fields not provided or explicitly set to null)
+        // Keep empty strings as they are valid values
         $updateData = array_filter($updateData, function ($value) {
             return $value !== null;
         });
-        
-        // Validate email uniqueness if email is being updated and different from current
-        if (isset($updateData['email']) && $updateData['email'] !== $customer->email) {
-            $request->validate([
-                'email' => 'unique:customers,email',
-            ]);
-        }
 
         // Handle profile picture upload
         if ($request->hasFile('profile_picture')) {
@@ -212,7 +218,7 @@ class CustomerAuthController extends Controller
 
         return response()->json([
             'message' => 'Profile updated successfully',
-            'customer' => $customer->fresh(),
+            'data' => $customer->fresh(),
         ]);
     }
 

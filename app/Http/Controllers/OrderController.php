@@ -102,6 +102,7 @@ class OrderController extends Controller
                 'items.*.product_id' => 'required|exists:products,id',
                 'items.*.quantity' => 'required|integer|min:1',
                 'notes' => 'nullable|string|max:1000',
+                'coupon_code' => 'nullable|string|max:50',
             ]);
 
             $customer = $this->getAuthenticatedCustomer();
@@ -110,6 +111,7 @@ class OrderController extends Controller
                 'shipping_address' => $request->shipping_address,
                 'items' => $request->items,
                 'notes' => $request->notes,
+                'coupon_code' => $request->coupon_code,
             ];
 
             $result = $this->orderService->createOrder($data, $customer->id);

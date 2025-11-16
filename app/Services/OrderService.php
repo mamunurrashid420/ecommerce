@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Notifications\NewOrderNotification;
 use App\Services\InventoryService;
 use App\Services\PurchaseService;
+use App\Services\CouponService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Exception;
@@ -18,11 +19,16 @@ class OrderService
 {
     protected $inventoryService;
     protected $purchaseService;
+    protected $couponService;
 
-    public function __construct(InventoryService $inventoryService, PurchaseService $purchaseService)
-    {
+    public function __construct(
+        InventoryService $inventoryService,
+        PurchaseService $purchaseService,
+        CouponService $couponService
+    ) {
         $this->inventoryService = $inventoryService;
         $this->purchaseService = $purchaseService;
+        $this->couponService = $couponService;
     }
 
     /**
@@ -61,13 +67,46 @@ class OrderService
             // Generate unique order number
             $orderNumber = $this->generateOrderNumber();
             
-            // Calculate total amount from validated items
-            $totalAmount = $validation['total_amount'];
+            // Calculate subtotal from validated items
+            $subtotal = $validation['total_amount'];
+            $discountAmount = 0;
+            $totalAmount = $subtotal;
+            $couponId = null;
+            $couponCode = null;
+            
+            // Apply coupon if provided
+            if (!empty($data['coupon_code'])) {
+                try {
+                    $couponResult = $this->couponService->validateAndCalculateDiscount(
+                        $data['coupon_code'],
+                        $items,
+                        $customerId
+                    );
+                    
+                    $subtotal = $couponResult['subtotal'];
+                    $discountAmount = $couponResult['discount_amount'];
+                    $totalAmount = $couponResult['total_after_discount'];
+                    $couponId = $couponResult['coupon']->id;
+                    $couponCode = $couponResult['coupon']->code;
+                } catch (Exception $e) {
+                    // Log coupon error but don't fail order creation
+                    Log::warning('Coupon application failed during order creation', [
+                        'coupon_code' => $data['coupon_code'],
+                        'customer_id' => $customerId,
+                        'error' => $e->getMessage()
+                    ]);
+                    // Continue without coupon
+                }
+            }
             
             // Create order
             $order = Order::create([
                 'order_number' => $orderNumber,
                 'customer_id' => $customerId,
+                'coupon_id' => $couponId,
+                'coupon_code' => $couponCode,
+                'subtotal' => $subtotal,
+                'discount_amount' => $discountAmount,
                 'total_amount' => $totalAmount,
                 'status' => 'pending',
                 'shipping_address' => $data['shipping_address'],
@@ -89,6 +128,18 @@ class OrderService
                     $itemData['product_id'],
                     $itemData['quantity'],
                     $order->id
+                );
+            }
+            
+            // Record coupon usage if coupon was applied
+            if ($couponId) {
+                $this->couponService->recordUsage(
+                    $couponId,
+                    $order->id,
+                    $customerId,
+                    $discountAmount,
+                    $subtotal,
+                    $totalAmount
                 );
             }
             
@@ -146,7 +197,7 @@ class OrderService
      */
     public function getOrders(array $filters = [], int $perPage = 15): array
     {
-        $query = Order::with(['customer', 'orderItems.product']);
+        $query = Order::with(['customer', 'orderItems.product', 'coupon']);
         
         // Filter by status
         if (isset($filters['status']) && $filters['status']) {
@@ -209,7 +260,7 @@ class OrderService
      */
     public function getCustomerOrders(int $customerId, array $filters = [], int $perPage = 15): array
     {
-        $query = Order::with(['orderItems.product'])
+        $query = Order::with(['orderItems.product', 'coupon'])
             ->where('customer_id', $customerId);
         
         // Filter by status
@@ -251,7 +302,7 @@ class OrderService
      */
     public function getOrder(int $orderId, ?int $customerId = null): array
     {
-        $order = Order::with(['customer', 'orderItems.product'])->findOrFail($orderId);
+        $order = Order::with(['customer', 'orderItems.product', 'coupon', 'couponUsage'])->findOrFail($orderId);
         
         // If customer ID is provided, verify ownership
         if ($customerId !== null && $order->customer_id !== $customerId) {

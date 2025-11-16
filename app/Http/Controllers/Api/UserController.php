@@ -211,4 +211,90 @@ class UserController extends Controller
             ]
         ]);
     }
+
+    /**
+     * Update admin user password.
+     */
+    public function updatePassword(Request $request, User $user): JsonResponse
+    {
+        // Only allow updating admin users
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        $request->validate([
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user->update([
+            'password' => \Illuminate\Support\Facades\Hash::make($request->password)
+        ]);
+
+        return response()->json([
+            'message' => 'Password updated successfully',
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+            ]
+        ]);
+    }
+
+    /**
+     * Assign role to admin user.
+     */
+    public function assignRole(Request $request, User $user): JsonResponse
+    {
+        // Only allow updating admin users
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        $request->validate([
+            'role_id' => 'required|exists:roles,id',
+        ]);
+
+        $user->update([
+            'role_id' => $request->role_id
+        ]);
+
+        $user->load('roleModel');
+
+        return response()->json([
+            'message' => 'Role assigned successfully',
+            'data' => $user
+        ]);
+    }
+
+    /**
+     * Change admin user role.
+     */
+    public function changeRole(Request $request, User $user): JsonResponse
+    {
+        // Only allow updating admin users
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        $request->validate([
+            'role_id' => 'required|exists:roles,id',
+        ]);
+
+        $user->update([
+            'role_id' => $request->role_id
+        ]);
+
+        $user->load('roleModel');
+
+        return response()->json([
+            'message' => 'Role changed successfully',
+            'data' => $user
+        ]);
+    }
 }

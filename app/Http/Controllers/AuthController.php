@@ -88,4 +88,80 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Logged out successfully']);
     }
+
+    /**
+     * Get authenticated admin user profile
+     */
+    public function profile(Request $request)
+    {
+        $user = $request->user();
+        
+        // Load role relationship if exists
+        if ($user->role_id) {
+            $user->load('roleModel');
+        }
+
+        return response()->json([
+            'data' => $user
+        ]);
+    }
+
+    /**
+     * Update authenticated admin user profile
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|unique:users,email,' . $user->id,
+            'phone' => 'sometimes|nullable|string|max:20',
+            'address' => 'sometimes|nullable|string',
+        ]);
+
+        $user->update($request->only([
+            'name', 'email', 'phone', 'address'
+        ]));
+
+        // Reload user with relationships
+        $user->refresh();
+        if ($user->role_id) {
+            $user->load('roleModel');
+        }
+
+        return response()->json([
+            'message' => 'Profile updated successfully',
+            'data' => $user
+        ]);
+    }
+
+    /**
+     * Update authenticated admin user password
+     */
+    public function updatePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        // Verify current password
+        if (!Hash::check($request->current_password, $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['The current password is incorrect.'],
+            ]);
+        }
+
+        // Update password
+        $user->update([
+            'password' => Hash::make($request->password)
+        ]);
+
+        return response()->json([
+            'message' => 'Password updated successfully'
+        ]);
+    }
 }

@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\PermissionController;
+use App\Http\Controllers\Api\CouponController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -39,12 +40,18 @@ Route::prefix('purchase')->group(function () {
 // Public site settings (for frontend)
 Route::get('/site-settings/public', [SiteSettingController::class, 'public']);
 
+// Public Coupon routes
+Route::get('/coupons/available', [CouponController::class, 'available']);
+
 // Admin User Management Routes (Protected - Admin only)
 Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::apiResource('users', UserController::class);
     Route::post('users/{user}/ban', [UserController::class, 'ban']);
     Route::post('users/{user}/unban', [UserController::class, 'unban']);
     Route::get('users-stats', [UserController::class, 'stats']);
+    Route::put('users/{user}/password', [UserController::class, 'updatePassword']);
+    Route::post('users/{user}/assign-role', [UserController::class, 'assignRole']);
+    Route::put('users/{user}/change-role', [UserController::class, 'changeRole']);
 });
 
 // Public Category routes
@@ -56,8 +63,9 @@ Route::get('/categories/{category}', [CategoryController::class, 'show']);
 
 // Customer routes - use customer middleware for Customer model authentication
 Route::middleware('customer')->prefix('customer')->group(function () {
-    Route::post('/logout', [CustomerAuthController::class, 'logout']);
+    Route::get('/profile', [CustomerAuthController::class, 'profile']);
     Route::put('/profile', [CustomerAuthController::class, 'updateProfile']);
+    Route::post('/logout', [CustomerAuthController::class, 'logout']);
 });
 
 // Customer order routes - use customer middleware
@@ -71,12 +79,22 @@ Route::middleware('customer')->group(function () {
         Route::post('/validate', [PurchaseController::class, 'validateItems']);
         Route::post('/summary', [PurchaseController::class, 'getSummary']);
     });
+    
+    // Customer Coupon Routes
+    Route::prefix('coupons')->group(function () {
+        Route::post('/validate', [CouponController::class, 'validate']);
+    });
 });
 
 // Protected routes (Admin/User authentication)
 Route::middleware('auth:sanctum')->group(function () {
     // Admin/User logout
     Route::post('/logout', [AuthController::class, 'logout']);
+    
+    // Authenticated Admin User Profile Management
+    Route::get('/profile', [AuthController::class, 'profile']);
+    Route::put('/profile', [AuthController::class, 'updateProfile']);
+    Route::put('/profile/password', [AuthController::class, 'updatePassword']);
     
     // Site Settings (accessible to all authenticated users)
     Route::get('/site-settings', [SiteSettingController::class, 'show']);
@@ -164,6 +182,17 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/history', [AdminPurchaseController::class, 'getAllPurchaseHistory']);
             Route::get('/products/{product}/history', [AdminPurchaseController::class, 'getProductPurchaseHistory']);
             Route::get('/stats', [AdminPurchaseController::class, 'getPurchaseStats']);
+        });
+        
+        // Admin Coupon Management
+        Route::prefix('coupons')->group(function () {
+            Route::get('/', [CouponController::class, 'index']);
+            Route::post('/', [CouponController::class, 'store']);
+            Route::get('/stats', [CouponController::class, 'stats']);
+            Route::get('/{coupon}', [CouponController::class, 'show']);
+            Route::put('/{coupon}', [CouponController::class, 'update']);
+            Route::delete('/{coupon}', [CouponController::class, 'destroy']);
+            Route::post('/{coupon}/toggle-active', [CouponController::class, 'toggleActive']);
         });
         
         // Roles & Permissions Management (Admin only - requires roles.manage permission)
