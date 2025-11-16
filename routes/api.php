@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\SiteSettingController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\PermissionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -37,11 +39,13 @@ Route::prefix('purchase')->group(function () {
 // Public site settings (for frontend)
 Route::get('/site-settings/public', [SiteSettingController::class, 'public']);
 
-// API routes for frontend
-Route::apiResource('users', UserController::class);
-Route::post('users/{user}/ban', [UserController::class, 'ban']);
-Route::post('users/{user}/unban', [UserController::class, 'unban']);
-Route::get('users-stats', [UserController::class, 'stats']);
+// Admin User Management Routes (Protected - Admin only)
+Route::middleware(['auth:sanctum', 'admin'])->group(function () {
+    Route::apiResource('users', UserController::class);
+    Route::post('users/{user}/ban', [UserController::class, 'ban']);
+    Route::post('users/{user}/unban', [UserController::class, 'unban']);
+    Route::get('users-stats', [UserController::class, 'stats']);
+});
 
 // Public Category routes
 Route::get('/categories', [CategoryController::class, 'index']);
@@ -160,6 +164,24 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/history', [AdminPurchaseController::class, 'getAllPurchaseHistory']);
             Route::get('/products/{product}/history', [AdminPurchaseController::class, 'getProductPurchaseHistory']);
             Route::get('/stats', [AdminPurchaseController::class, 'getPurchaseStats']);
+        });
+        
+        // Roles & Permissions Management (Admin only - requires roles.manage permission)
+        Route::middleware('permission:roles.manage')->group(function () {
+            // Roles Management
+            Route::apiResource('roles', RoleController::class);
+            Route::post('roles/{role}/permissions', [RoleController::class, 'assignPermissions']);
+            Route::delete('roles/{role}/permissions', [RoleController::class, 'removePermissions']);
+            Route::get('roles/{role}/permissions', [RoleController::class, 'permissions']);
+            Route::get('roles/{role}/users', [RoleController::class, 'users']);
+            Route::post('roles/{role}/toggle-active', [RoleController::class, 'toggleActive']);
+            
+            // Permissions Management
+            // Specific routes must come before apiResource to avoid route conflicts
+            Route::get('permissions/grouped', [PermissionController::class, 'grouped']);
+            Route::get('permissions/groups', [PermissionController::class, 'groups']);
+            Route::apiResource('permissions', PermissionController::class);
+            Route::post('permissions/{permission}/toggle-active', [PermissionController::class, 'toggleActive']);
         });
     });
 });

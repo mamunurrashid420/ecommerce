@@ -23,6 +23,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'role_id',
         'phone',
         'address',
         'status',
@@ -53,29 +54,6 @@ class User extends Authenticatable
         ];
     }
 
-    /**
-     * Get the orders for the user.
-     */
-    public function orders()
-    {
-        return $this->hasMany(Order::class);
-    }
-
-    /**
-     * Get the orders count attribute.
-     */
-    public function getOrdersCountAttribute()
-    {
-        return $this->orders()->count();
-    }
-
-    /**
-     * Get the total spent attribute.
-     */
-    public function getTotalSpentAttribute()
-    {
-        return $this->orders()->sum('total_amount') ?? 0;
-    }
 
     /**
      * Check if user is admin
@@ -83,5 +61,72 @@ class User extends Authenticatable
     public function isAdmin()
     {
         return $this->role === 'admin';
+    }
+
+    /**
+     * Get the role that belongs to the user.
+     */
+    public function roleModel()
+    {
+        return $this->belongsTo(Role::class, 'role_id');
+    }
+
+    /**
+     * Get the permissions that belong directly to the user.
+     */
+    public function permissions()
+    {
+        return $this->belongsToMany(Permission::class, 'permission_user');
+    }
+
+    /**
+     * Check if user has a specific permission.
+     * Checks both role permissions and direct user permissions.
+     */
+    public function hasPermission(string $permissionSlug): bool
+    {
+        // Check direct user permissions
+        if ($this->permissions()
+            ->where('slug', $permissionSlug)
+            ->where('is_active', true)
+            ->exists()) {
+            return true;
+        }
+
+        // Check role permissions
+        if ($this->role_id) {
+            $role = $this->roleModel;
+            if ($role && $role->hasPermission($permissionSlug)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if user has any of the given permissions.
+     */
+    public function hasAnyPermission(array $permissionSlugs): bool
+    {
+        foreach ($permissionSlugs as $slug) {
+            if ($this->hasPermission($slug)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if user has all of the given permissions.
+     */
+    public function hasAllPermissions(array $permissionSlugs): bool
+    {
+        foreach ($permissionSlugs as $slug) {
+            if (!$this->hasPermission($slug)) {
+                return false;
+            }
+        }
+        return true;
     }
 }

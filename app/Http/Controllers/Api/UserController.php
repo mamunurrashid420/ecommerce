@@ -10,7 +10,7 @@ use Illuminate\Http\JsonResponse;
 class UserController extends Controller
 {
     /**
-     * Store a newly created user.
+     * Store a newly created admin user.
      */
     public function store(Request $request): JsonResponse
     {
@@ -18,7 +18,6 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
-            'role' => 'required|in:customer,admin',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
             'status' => 'sometimes|in:active,inactive,banned',
@@ -28,24 +27,25 @@ class UserController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => \Illuminate\Support\Facades\Hash::make($request->password),
-            'role' => $request->role,
+            'role' => 'admin', // Only create admin users
             'phone' => $request->phone,
             'address' => $request->address,
             'status' => $request->status ?? 'active',
         ]);
 
         return response()->json([
-            'message' => 'User created successfully',
+            'message' => 'Admin user created successfully',
             'data' => $user
         ], 201);
     }
 
     /**
-     * Display a listing of users with pagination and filtering.
+     * Display a listing of admin users with pagination and filtering.
      */
     public function index(Request $request): JsonResponse
     {
-        $query = User::query();
+        // Only return admin users
+        $query = User::where('role', 'admin');
 
         // Search functionality
         if ($request->has('search') && !empty($request->search)) {
@@ -54,11 +54,6 @@ class UserController extends Controller
                 $q->where('name', 'LIKE', "%{$search}%")
                   ->orWhere('email', 'LIKE', "%{$search}%");
             });
-        }
-
-        // Role filter
-        if ($request->has('role') && !empty($request->role)) {
-            $query->where('role', $request->role);
         }
 
         // Status filter
@@ -74,13 +69,6 @@ class UserController extends Controller
         // Pagination
         $perPage = $request->get('per_page', 10);
         $users = $query->paginate($perPage);
-
-        // Add computed attributes
-        $users->getCollection()->transform(function ($user) {
-            $user->orders_count = 0; // Will be updated when Order model exists
-            $user->total_spent = 0; // Will be updated when Order model exists
-            return $user;
-        });
 
         return response()->json([
             'data' => $users->items(),
@@ -100,9 +88,12 @@ class UserController extends Controller
      */
     public function show(User $user): JsonResponse
     {
-        // Add computed attributes
-        $user->orders_count = 0; // Will be updated when Order model exists
-        $user->total_spent = 0; // Will be updated when Order model exists
+        // Only allow viewing admin users
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
 
         return response()->json([
             'data' => $user
@@ -110,86 +101,113 @@ class UserController extends Controller
     }
 
     /**
-     * Update the specified user.
+     * Update the specified admin user.
      */
     public function update(Request $request, User $user): JsonResponse
     {
+        // Only allow updating admin users
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
         $request->validate([
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:users,email,' . $user->id,
-            'role' => 'sometimes|in:customer,admin',
             'phone' => 'sometimes|nullable|string|max:20',
             'address' => 'sometimes|nullable|string',
             'status' => 'sometimes|in:active,inactive,banned',
         ]);
 
         $user->update($request->only([
-            'name', 'email', 'role', 'phone', 'address', 'status'
+            'name', 'email', 'phone', 'address', 'status'
         ]));
 
         return response()->json([
-            'message' => 'User updated successfully',
+            'message' => 'Admin user updated successfully',
             'data' => $user
         ]);
     }
 
     /**
-     * Remove the specified user from storage.
+     * Remove the specified admin user from storage.
      */
     public function destroy(User $user): JsonResponse
     {
+        // Only allow deleting admin users
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
         $user->delete();
 
         return response()->json([
-            'message' => 'User deleted successfully'
+            'message' => 'Admin user deleted successfully'
         ]);
     }
 
     /**
-     * Ban a user.
+     * Ban an admin user.
      */
     public function ban(User $user): JsonResponse
     {
+        // Only allow banning admin users
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
         $user->update(['status' => 'banned']);
 
         return response()->json([
-            'message' => 'User banned successfully',
+            'message' => 'Admin user banned successfully',
             'data' => $user
         ]);
     }
 
     /**
-     * Unban a user.
+     * Unban an admin user.
      */
     public function unban(User $user): JsonResponse
     {
+        // Only allow unbanning admin users
+        if ($user->role !== 'admin') {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
         $user->update(['status' => 'active']);
 
         return response()->json([
-            'message' => 'User unbanned successfully',
+            'message' => 'Admin user unbanned successfully',
             'data' => $user
         ]);
     }
 
     /**
-     * Get user statistics.
+     * Get admin user statistics.
      */
     public function stats(): JsonResponse
     {
-        $totalUsers = User::count();
-        $totalCustomers = User::where('role', 'customer')->count();
-        $activeUsers = User::where('status', 'active')->count();
-        $newThisMonth = User::whereMonth('created_at', now()->month)
-                           ->whereYear('created_at', now()->year)
-                           ->count();
+        $totalAdmins = User::where('role', 'admin')->count();
+        $activeAdmins = User::where('role', 'admin')->where('status', 'active')->count();
+        $newAdminsThisMonth = User::where('role', 'admin')
+                                   ->whereMonth('created_at', now()->month)
+                                   ->whereYear('created_at', now()->year)
+                                   ->count();
+        $bannedAdmins = User::where('role', 'admin')->where('status', 'banned')->count();
 
         return response()->json([
             'data' => [
-                'total_users' => $totalUsers,
-                'total_customers' => $totalCustomers,
-                'active_users' => $activeUsers,
-                'new_this_month' => $newThisMonth,
-                'total_revenue' => 0, // Will be updated when Order model exists
+                'total_admins' => $totalAdmins,
+                'active_admins' => $activeAdmins,
+                'banned_admins' => $bannedAdmins,
+                'new_this_month' => $newAdminsThisMonth,
             ]
         ]);
     }
