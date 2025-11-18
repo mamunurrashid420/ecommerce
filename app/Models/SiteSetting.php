@@ -21,6 +21,7 @@ class SiteSetting extends Model
         'header_logo',
         'footer_logo',
         'favicon',
+        'slider_images',
         'social_links',
         'meta_title',
         'meta_description',
@@ -54,6 +55,7 @@ class SiteSetting extends Model
 
     protected $casts = [
         'social_links' => 'array',
+        'slider_images' => 'array',
         'business_hours' => 'array',
         'payment_methods' => 'array',
         'shipping_methods' => 'array',
@@ -162,6 +164,54 @@ class SiteSetting extends Model
         return Attribute::make(
             get: fn () => $this->getFullUrl($this->favicon)
         );
+    }
+
+    /**
+     * Get full URLs for slider images with title and subtitle
+     */
+    protected function sliderImagesUrls(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->getSliderImagesUrls()
+        );
+    }
+
+    /**
+     * Helper method to get full URLs for slider images
+     */
+    private function getSliderImagesUrls()
+    {
+        if (empty($this->slider_images) || !is_array($this->slider_images)) {
+            return [];
+        }
+
+        return array_map(function ($item) {
+            // Handle both old format (string path) and new format (object with image, title, subtitle, hyperlink)
+            if (is_string($item)) {
+                // Legacy format: just a path string
+                return [
+                    'image' => $this->getFullUrl($item),
+                    'title' => null,
+                    'subtitle' => null,
+                    'hyperlink' => null,
+                ];
+            } elseif (is_array($item) && isset($item['image'])) {
+                // New format: object with image, title, subtitle, hyperlink
+                return [
+                    'image' => $this->getFullUrl($item['image'] ?? null),
+                    'title' => $item['title'] ?? null,
+                    'subtitle' => $item['subtitle'] ?? null,
+                    'hyperlink' => $item['hyperlink'] ?? null,
+                ];
+            }
+            
+            return [
+                'image' => null,
+                'title' => null,
+                'subtitle' => null,
+                'hyperlink' => null,
+            ];
+        }, $this->slider_images);
     }
 
     /**

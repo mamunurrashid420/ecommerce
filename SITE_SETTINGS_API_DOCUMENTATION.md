@@ -84,8 +84,15 @@ All parameters are optional. Only include the fields you want to update.
 | `header_logo` | file/string | No | image (jpeg,png,jpg,gif,svg), max:2MB | Header logo file or existing path |
 | `footer_logo` | file/string | No | image (jpeg,png,jpg,gif,svg), max:2MB | Footer logo file or existing path |
 | `favicon` | file/string | No | image (ico,png), max:1MB | Favicon file or existing path |
+| `slider_images` | array | No | array of images (jpeg,png,jpg,gif,svg), max:2MB each | Multiple slider images (files or paths array) |
 
-**Note**: For file uploads, send as `multipart/form-data`. For existing paths, send as string in JSON.
+**Note**: For file uploads, send as `multipart/form-data`. For existing paths, send as string in JSON. For slider images, send as array of files or array of paths.
+
+**Slider Images Details:**
+- Upload multiple images: Send as `slider_images[]` in multipart/form-data (replaces all existing)
+- Update/reorder: Send as `slider_images` array of paths in JSON (keeps only included images)
+- Delete all: Send empty array `[]`
+- See [Slider Images Documentation](./SLIDER_IMAGES_API_DOCUMENTATION.md) for complete details
 
 ### Social Media Links
 
@@ -214,6 +221,11 @@ Each day object structure:
     "header_logo": "http://localhost:8000/storage/logos/header_logo.jpg",
     "footer_logo": "http://localhost:8000/storage/logos/footer_logo.jpg",
     "favicon": "http://localhost:8000/storage/logos/favicon.ico",
+    "slider_images": [
+      "http://localhost:8000/storage/sliders/slider1.jpg",
+      "http://localhost:8000/storage/sliders/slider2.png",
+      "http://localhost:8000/storage/sliders/slider3.jpg"
+    ],
     "social_links": {
       "facebook": "https://facebook.com/mystore",
       "twitter": "https://twitter.com/mystore",
@@ -352,6 +364,18 @@ curl -X POST "http://localhost:8000/api/site-settings" \
   -F "footer_logo=@/path/to/footer_logo.png" \
   -F "favicon=@/path/to/favicon.ico"
 ```
+
+### Example 5a: Upload Slider Images (Form Data)
+
+```bash
+curl -X POST "http://localhost:8000/api/site-settings" \
+  -H "Authorization: Bearer {admin_token}" \
+  -F "slider_images[]=@/path/to/slider1.jpg" \
+  -F "slider_images[]=@/path/to/slider2.png" \
+  -F "slider_images[]=@/path/to/slider3.jpg"
+```
+
+**Note**: See [Slider Images Documentation](./SLIDER_IMAGES_API_DOCUMENTATION.md) for complete slider images management guide.
 
 ### Example 6: Update Store Mode (JSON)
 
@@ -522,9 +546,11 @@ console.log(data);
 - **Header Logo**: Accepts JPEG, PNG, JPG, GIF, SVG (max 2MB)
 - **Footer Logo**: Accepts JPEG, PNG, JPG, GIF, SVG (max 2MB)
 - **Favicon**: Accepts ICO, PNG (max 1MB)
-- Files are stored in `storage/app/public/logos/`
+- **Slider Images**: Accepts JPEG, PNG, JPG, GIF, SVG (max 2MB each, multiple files)
+- Files are stored in `storage/app/public/logos/` (logos) and `storage/app/public/sliders/` (slider images)
 - Old files are automatically deleted when new ones are uploaded
-- Access uploaded files via: `http://your-domain.com/storage/logos/{filename}`
+- Access uploaded files via: `http://your-domain.com/storage/logos/{filename}` or `http://your-domain.com/storage/sliders/{filename}`
+- **Slider Images**: See [Slider Images Documentation](./SLIDER_IMAGES_API_DOCUMENTATION.md) for detailed management guide
 
 ### Partial Updates
 - All fields are optional

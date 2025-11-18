@@ -15,6 +15,8 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\Api\CouponController;
+use App\Http\Controllers\Api\SearchController;
+use App\Http\Controllers\Api\ContactController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -40,6 +42,16 @@ Route::prefix('purchase')->group(function () {
 // Public site settings (for frontend)
 Route::get('/site-settings/public', [SiteSettingController::class, 'public']);
 
+// Public Policy Documents (No authentication required)
+Route::get('/policies/terms-of-service', [SiteSettingController::class, 'getTermsOfService']);
+Route::get('/policies/privacy-policy', [SiteSettingController::class, 'getPrivacyPolicy']);
+Route::get('/policies/return-policy', [SiteSettingController::class, 'getReturnPolicy']);
+Route::get('/policies/shipping-policy', [SiteSettingController::class, 'getShippingPolicy']);
+
+// Public Contact APIs (No authentication required)
+Route::get('/contact', [ContactController::class, 'getContactInfo']);
+Route::post('/contact', [ContactController::class, 'submitContactForm']);
+
 // Public Coupon routes
 Route::get('/coupons/available', [CouponController::class, 'available']);
 
@@ -56,10 +68,14 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 
 // Public Category routes
 Route::get('/categories', [CategoryController::class, 'index']);
+Route::get('/categories/with-products', [CategoryController::class, 'withLatestProducts']);
 Route::get('/categories/dropdown', [CategoryController::class, 'dropdown']);
 Route::get('/categories/featured', [CategoryController::class, 'featured']);
 Route::get('/categories/tree', [CategoryController::class, 'tree']);
 Route::get('/categories/{category}', [CategoryController::class, 'show']);
+
+// Public Search route (available for both authenticated and guest users)
+Route::get('/search', [SearchController::class, 'search']);
 
 // Customer routes - use customer middleware for Customer model authentication
 Route::middleware('customer')->prefix('customer')->group(function () {
@@ -68,11 +84,17 @@ Route::middleware('customer')->prefix('customer')->group(function () {
     Route::post('/logout', [CustomerAuthController::class, 'logout']);
 });
 
-// Customer order routes - use customer middleware
-Route::middleware('customer')->group(function () {
+// Order routes - allow both customers and admins
+// GET /orders and GET /orders/{order} - accessible to both customers and admins
+// (customerOrders and show methods handle both cases)
+Route::middleware('auth.any')->group(function () {
     Route::get('/orders', [OrderController::class, 'customerOrders']);
-    Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
+});
+
+// Customer-only order routes - use customer middleware
+Route::middleware('customer')->group(function () {
+    Route::post('/orders', [OrderController::class, 'store']);
     
     // Customer Purchase Management Routes
     Route::prefix('purchase')->group(function () {
@@ -144,14 +166,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/categories/{category}/toggle-active', [CategoryController::class, 'toggleActive']);
         
         // Admin Order Management
-        Route::get('/orders', [OrderController::class, 'index']);
-        Route::get('/orders/{order}', [OrderController::class, 'show']);
+        // Note: GET /orders is handled by customerOrders route above (supports both customers and admins)
         Route::get('/orders/stats', [OrderController::class, 'stats']);
         Route::put('/orders/{order}', [OrderController::class, 'update']);
         Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
         
+        // Admin Contact Management
+        Route::prefix('admin')->group(function () {
+            Route::get('/contacts', [ContactController::class, 'index']);
+            Route::get('/contacts/stats', [ContactController::class, 'stats']);
+            Route::get('/contacts/{contact}', [ContactController::class, 'show']);
+            Route::match(['put', 'patch'], '/contacts/{contact}/status', [ContactController::class, 'updateStatus']);
+            Route::delete('/contacts/{contact}', [ContactController::class, 'destroy']);
+        });
+        
         // Site Settings Management (Admin only - Update)
         Route::post('/site-settings', [SiteSettingController::class, 'createOrUpdate']);
+        Route::delete('/site-settings/slider-items', [SiteSettingController::class, 'removeSliderItems']);
         
         // Inventory Management
         Route::prefix('inventory')->group(function () {

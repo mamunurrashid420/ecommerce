@@ -37,6 +37,7 @@ class SiteSettingController extends Controller
                     'header_logo' => $settings->header_logo_url,
                     'footer_logo' => $settings->footer_logo_url,
                     'favicon' => $settings->favicon_url,
+                    'slider_images' => $settings->slider_images_urls,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -156,6 +157,24 @@ class SiteSettingController extends Controller
                 $rules['favicon'] = 'nullable|string';
             }
 
+            // Validation for slider images
+            if ($request->hasFile('slider_images')) {
+                $rules['slider_images'] = 'nullable|array';
+                $rules['slider_images.*'] = 'image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+                $rules['slider_titles'] = 'nullable|array';
+                $rules['slider_titles.*'] = 'nullable|string|max:255';
+                $rules['slider_subtitles'] = 'nullable|array';
+                $rules['slider_subtitles.*'] = 'nullable|string|max:500';
+                $rules['slider_hyperlinks'] = 'nullable|array';
+                $rules['slider_hyperlinks.*'] = 'nullable|url|max:500';
+            } elseif ($request->has('slider_images')) {
+                $rules['slider_images'] = 'nullable|array';
+                $rules['slider_images.*.image'] = 'nullable|string';
+                $rules['slider_images.*.title'] = 'nullable|string|max:255';
+                $rules['slider_images.*.subtitle'] = 'nullable|string|max:500';
+                $rules['slider_images.*.hyperlink'] = 'nullable|url|max:500';
+            }
+
             $validator = Validator::make($request->all(), $rules);
 
             if ($validator->fails()) {
@@ -167,7 +186,7 @@ class SiteSettingController extends Controller
             }
 
             $settings = SiteSetting::getInstance();
-            $data = $request->except(['header_logo', 'footer_logo', 'favicon']);
+            $data = $request->except(['header_logo', 'footer_logo', 'favicon', 'slider_images']);
 
             // Handle file uploads
             if ($request->hasFile('header_logo')) {
@@ -191,6 +210,79 @@ class SiteSettingController extends Controller
                 $data['favicon'] = $request->file('favicon')->store('logos', 'public');
             }
 
+            // Handle slider images uploads
+            if ($request->hasFile('slider_images')) {
+                // Get existing slider images (don't delete them)
+                $existingImages = $settings->slider_images ?? [];
+                if (!is_array($existingImages)) {
+                    $existingImages = [];
+                }
+                
+                // Upload new slider images with titles, subtitles, and hyperlinks
+                $uploadedImages = [];
+                $files = $request->file('slider_images');
+                $titles = $request->input('slider_titles', []);
+                $subtitles = $request->input('slider_subtitles', []);
+                $hyperlinks = $request->input('slider_hyperlinks', []);
+                
+                foreach ($files as $index => $image) {
+                    $imagePath = $image->store('sliders', 'public');
+                    $uploadedImages[] = [
+                        'image' => $imagePath,
+                        'title' => $titles[$index] ?? null,
+                        'subtitle' => $subtitles[$index] ?? null,
+                        'hyperlink' => $hyperlinks[$index] ?? null,
+                    ];
+                }
+                
+                // Append new images to existing ones instead of replacing
+                $data['slider_images'] = array_merge($existingImages, $uploadedImages);
+            } elseif ($request->has('slider_images')) {
+                // If slider_images is provided as an array (for updating/reordering/deleting)
+                $newImages = $request->input('slider_images', []);
+                $existingImages = $settings->slider_images ?? [];
+                
+                // Find images that were removed and delete them
+                if (is_array($existingImages) && is_array($newImages)) {
+                    $existingPaths = array_map(function ($item) {
+                        return is_array($item) ? ($item['image'] ?? null) : $item;
+                    }, $existingImages);
+                    
+                    $newPaths = array_map(function ($item) {
+                        return is_array($item) ? ($item['image'] ?? null) : $item;
+                    }, $newImages);
+                    
+                    $removedPaths = array_diff($existingPaths, $newPaths);
+                    foreach ($removedPaths as $removedPath) {
+                        if ($removedPath) {
+                            Storage::delete($removedPath);
+                        }
+                    }
+                }
+                
+                // Ensure all items are in the correct format
+                $formattedImages = array_map(function ($item) {
+                    if (is_string($item)) {
+                        // Legacy format: convert to new format
+                        return [
+                            'image' => $item,
+                            'title' => null,
+                            'subtitle' => null,
+                            'hyperlink' => null,
+                        ];
+                    }
+                    // New format: ensure all fields are present
+                    return [
+                        'image' => $item['image'] ?? null,
+                        'title' => $item['title'] ?? null,
+                        'subtitle' => $item['subtitle'] ?? null,
+                        'hyperlink' => $item['hyperlink'] ?? null,
+                    ];
+                }, $newImages);
+                
+                $data['slider_images'] = $formattedImages;
+            }
+
             $settings->update($data);
 
             return response()->json([
@@ -211,6 +303,7 @@ class SiteSettingController extends Controller
                     'header_logo' => $settings->header_logo_url,
                     'footer_logo' => $settings->footer_logo_url,
                     'favicon' => $settings->favicon_url,
+                    'slider_images' => $settings->slider_images_urls,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -275,6 +368,7 @@ class SiteSettingController extends Controller
                     'header_logo' => $settings->header_logo_url,
                     'footer_logo' => $settings->footer_logo_url,
                     'favicon' => $settings->favicon_url,
+                    'slider_images' => $settings->slider_images_urls,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -295,6 +389,223 @@ class SiteSettingController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve public site settings',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get Terms of Service (Public)
+     */
+    public function getTermsOfService(): JsonResponse
+    {
+        try {
+            $settings = SiteSetting::getInstance();
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'terms_of_service' => $settings->terms_of_service,
+                    'last_updated' => $settings->updated_at,
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve terms of service',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get Privacy Policy (Public)
+     */
+    public function getPrivacyPolicy(): JsonResponse
+    {
+        try {
+            $settings = SiteSetting::getInstance();
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'privacy_policy' => $settings->privacy_policy,
+                    'last_updated' => $settings->updated_at,
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve privacy policy',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get Return Policy (Public)
+     */
+    public function getReturnPolicy(): JsonResponse
+    {
+        try {
+            $settings = SiteSetting::getInstance();
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'return_policy' => $settings->return_policy,
+                    'last_updated' => $settings->updated_at,
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve return policy',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get Shipping Policy (Public)
+     */
+    public function getShippingPolicy(): JsonResponse
+    {
+        try {
+            $settings = SiteSetting::getInstance();
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'shipping_policy' => $settings->shipping_policy,
+                    'last_updated' => $settings->updated_at,
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve shipping policy',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove slider items by image paths or indices
+     */
+    public function removeSliderItems(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'slider_indices' => 'nullable|array',
+                'slider_indices.*' => 'integer|min:0',
+                'slider_paths' => 'nullable|array',
+                'slider_paths.*' => 'string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $settings = SiteSetting::getInstance();
+            $existingImages = $settings->slider_images ?? [];
+            
+            if (!is_array($existingImages) || empty($existingImages)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No slider images found to remove'
+                ], 404);
+            }
+
+            $indicesToRemove = $request->input('slider_indices', []);
+            $pathsToRemove = $request->input('slider_paths', []);
+
+            // If neither indices nor paths are provided, return error
+            if (empty($indicesToRemove) && empty($pathsToRemove)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please provide either slider_indices or slider_paths to remove items'
+                ], 422);
+            }
+
+            $removedCount = 0;
+            $remainingImages = [];
+            $imagesToDelete = [];
+
+            // Process removal by indices
+            if (!empty($indicesToRemove)) {
+                foreach ($existingImages as $index => $item) {
+                    if (in_array($index, $indicesToRemove)) {
+                        // Mark for deletion
+                        $imagePath = is_array($item) ? ($item['image'] ?? null) : $item;
+                        if ($imagePath) {
+                            $imagesToDelete[] = $imagePath;
+                        }
+                        $removedCount++;
+                    } else {
+                        $remainingImages[] = $item;
+                    }
+                }
+            } else {
+                // Process removal by paths
+                $remainingImages = $existingImages;
+                
+                foreach ($pathsToRemove as $pathToRemove) {
+                    // Remove leading /storage/ or storage/ if present
+                    $normalizedPath = preg_replace('#^/?storage/#', '', $pathToRemove);
+                    // Also handle full URLs
+                    $normalizedPath = preg_replace('#^https?://[^/]+/storage/#', '', $normalizedPath);
+                    
+                    foreach ($remainingImages as $key => $item) {
+                        $imagePath = is_array($item) ? ($item['image'] ?? null) : $item;
+                        if ($imagePath) {
+                            // Normalize existing path for comparison
+                            $normalizedExistingPath = preg_replace('#^/?storage/#', '', $imagePath);
+                            
+                            if ($normalizedPath === $normalizedExistingPath || 
+                                $imagePath === $pathToRemove || 
+                                $imagePath === $normalizedPath) {
+                                $imagesToDelete[] = $imagePath;
+                                unset($remainingImages[$key]);
+                                $removedCount++;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Re-index array after removal
+                $remainingImages = array_values($remainingImages);
+            }
+
+            // Delete image files from storage
+            foreach ($imagesToDelete as $imagePath) {
+                if ($imagePath) {
+                    Storage::delete($imagePath);
+                }
+            }
+
+            // Update settings with remaining images
+            $settings->slider_images = $remainingImages;
+            $settings->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully removed {$removedCount} slider item(s)",
+                'data' => [
+                    'removed_count' => $removedCount,
+                    'slider_images' => $settings->slider_images_urls,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove slider items',
                 'error' => $e->getMessage()
             ], 500);
         }

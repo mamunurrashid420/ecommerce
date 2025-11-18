@@ -44,8 +44,16 @@ GET /api/products
 
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
+| `search` | string | Search term to search across name, description, SKU, brand, model, tags, and meta keywords | - |
+| `category_id` | integer | Filter by category ID | - |
+| `min_price` | decimal | Minimum price filter (min: 0) | - |
+| `max_price` | decimal | Maximum price filter (must be >= min_price) | - |
+| `brand` | string | Filter by brand name (partial match) | - |
+| `in_stock` | boolean | Filter by stock availability (`true` for in stock, `false` for out of stock) | - |
+| `sort_by` | string | Sort field (`name`, `price`, `created_at`, `stock_quantity`) | `created_at` |
+| `sort_order` | string | Sort direction (`asc`/`desc`) | `desc` |
 | `page` | integer | Page number for pagination | 1 |
-| `per_page` | integer | Items per page | 12 |
+| `per_page` | integer | Items per page (max: 100) | 12 |
 
 ### Success Response (200 OK)
 
@@ -120,17 +128,101 @@ GET /api/products
 }
 ```
 
-### cURL Example
+### cURL Examples
 
+**Basic pagination:**
 ```bash
 curl -X GET "http://your-domain.com/api/products?page=1&per_page=12"
 ```
 
+**Search products:**
+```bash
+curl -X GET "http://your-domain.com/api/products?search=laptop&page=1&per_page=12"
+```
+
+**Filter by category:**
+```bash
+curl -X GET "http://your-domain.com/api/products?category_id=1&page=1&per_page=12"
+```
+
+**Filter by price range:**
+```bash
+curl -X GET "http://your-domain.com/api/products?min_price=100&max_price=500&page=1&per_page=12"
+```
+
+**Filter by brand:**
+```bash
+curl -X GET "http://your-domain.com/api/products?brand=Apple&page=1&per_page=12"
+```
+
+**Filter in-stock products:**
+```bash
+curl -X GET "http://your-domain.com/api/products?in_stock=true&page=1&per_page=12"
+```
+
+**Sort by price (low to high):**
+```bash
+curl -X GET "http://your-domain.com/api/products?sort_by=price&sort_order=asc&page=1&per_page=12"
+```
+
+**Combined search and filters:**
+```bash
+curl -X GET "http://your-domain.com/api/products?search=laptop&category_id=1&min_price=500&max_price=2000&in_stock=true&sort_by=price&sort_order=asc&page=1&per_page=12"
+```
+
+### Search Functionality
+
+The `search` parameter performs a comprehensive search across multiple product fields:
+- **Product name** (`name`)
+- **Short description** (`description`)
+- **Long description** (`long_description`)
+- **SKU** (`sku`)
+- **Brand** (`brand`)
+- **Model** (`model`)
+- **Meta keywords** (`meta_keywords`)
+- **Tags** (`tags` - JSON array search)
+
+The search is case-insensitive and uses partial matching (LIKE queries).
+
+### Filter Functionality
+
+**Category Filter:**
+- Filter products by a specific category ID
+- Only returns products in the specified category
+
+**Price Range Filter:**
+- `min_price`: Minimum price (inclusive)
+- `max_price`: Maximum price (inclusive)
+- Both can be used together or independently
+- `max_price` must be greater than or equal to `min_price` if both are provided
+
+**Brand Filter:**
+- Filter products by brand name
+- Uses partial matching (case-insensitive)
+- Example: `brand=Apple` will match "Apple", "Apple Inc", etc.
+
+**Stock Filter:**
+- `in_stock=true`: Only products with `stock_quantity > 0`
+- `in_stock=false`: Only products with `stock_quantity <= 0`
+
+**Sorting:**
+- `sort_by`: Field to sort by
+  - `name`: Product name (alphabetical)
+  - `price`: Product price
+  - `created_at`: Creation date (default)
+  - `stock_quantity`: Available stock
+- `sort_order`: Sort direction
+  - `asc`: Ascending (A-Z, low to high, oldest first)
+  - `desc`: Descending (Z-A, high to low, newest first)
+
 ### Notes
 
 - Only returns active products (`is_active = true`)
-- Results are paginated (12 items per page by default)
+- Results are paginated (12 items per page by default, max 100 per page)
 - Includes category, media, creator, and updater relationships
+- All filters can be combined for advanced product discovery
+- Search and filters work together (AND logic between different filters)
+- Search uses OR logic across multiple fields (matches if any field contains the search term)
 
 ---
 

@@ -12,12 +12,94 @@ use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $products = Product::with(['category', 'media', 'creator', 'updater'])
-            ->where('is_active', true)
-            ->paginate(12);
-        return response()->json($products);
+        try {
+            // Validate request parameters
+            $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+                'search' => 'nullable|string|max:255',
+                'category_id' => 'nullable|integer|exists:categories,id',
+                'min_price' => 'nullable|numeric|min:0',
+                'max_price' => 'nullable|numeric|min:0|gte:min_price',
+                'brand' => 'nullable|string|max:100',
+                'in_stock' => 'nullable|boolean',
+                'sort_by' => 'nullable|string|in:name,price,created_at,stock_quantity',
+                'sort_order' => 'nullable|string|in:asc,desc',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $query = Product::with(['category', 'media', 'creator', 'updater'])
+                ->where('is_active', true);
+
+            // Search functionality - search across multiple fields
+            if ($request->has('search') && !empty($request->search)) {
+                $searchTerm = $request->search;
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->where('name', 'LIKE', "%{$searchTerm}%")
+                        ->orWhere('description', 'LIKE', "%{$searchTerm}%")
+                        ->orWhere('long_description', 'LIKE', "%{$searchTerm}%")
+                        ->orWhere('sku', 'LIKE', "%{$searchTerm}%")
+                        ->orWhere('brand', 'LIKE', "%{$searchTerm}%")
+                        ->orWhere('model', 'LIKE', "%{$searchTerm}%")
+                        ->orWhere('meta_keywords', 'LIKE', "%{$searchTerm}%")
+                        ->orWhereJsonContains('tags', $searchTerm);
+                });
+            }
+
+            // Filter by category
+            if ($request->has('category_id') && $request->category_id) {
+                $query->where('category_id', $request->category_id);
+            }
+
+            // Filter by price range
+            if ($request->has('min_price') && $request->min_price !== null) {
+                $query->where('price', '>=', $request->min_price);
+            }
+            if ($request->has('max_price') && $request->max_price !== null) {
+                $query->where('price', '<=', $request->max_price);
+            }
+
+            // Filter by brand
+            if ($request->has('brand') && !empty($request->brand)) {
+                $query->where('brand', 'LIKE', "%{$request->brand}%");
+            }
+
+            // Filter by stock availability
+            if ($request->has('in_stock')) {
+                if ($request->in_stock == true || $request->in_stock === 'true' || $request->in_stock === '1') {
+                    $query->where('stock_quantity', '>', 0);
+                } elseif ($request->in_stock == false || $request->in_stock === 'false' || $request->in_stock === '0') {
+                    $query->where('stock_quantity', '<=', 0);
+                }
+            }
+
+            // Sorting
+            $sortBy = $request->get('sort_by', 'created_at');
+            $sortOrder = $request->get('sort_order', 'desc');
+            $query->orderBy($sortBy, $sortOrder);
+
+            // Pagination
+            $perPage = $request->get('per_page', 12);
+            $products = $query->paginate($perPage);
+
+            return response()->json($products);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch products',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function store(Request $request)

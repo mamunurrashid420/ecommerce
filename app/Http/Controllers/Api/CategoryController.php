@@ -103,6 +103,64 @@ class CategoryController extends Controller
     }
 
     /**
+     * Get categories with latest products (Public - for categories page)
+     * Returns categories with their 8 latest active products
+     */
+    public function withLatestProducts(Request $request)
+    {
+        try {
+            $query = Category::with(['parent', 'creator', 'updater'])
+                ->withCount(['products as active_products_count' => function ($query) {
+                    $query->where('is_active', true);
+                }])
+                ->with(['products' => function ($query) {
+                    $query->where('is_active', true)
+                        ->with(['media', 'category'])
+                        ->orderBy('created_at', 'desc')
+                        ->limit(8);
+                }]);
+
+            // Apply filters
+            if ($request->has('featured') && $request->featured == 'true') {
+                $query->featured();
+            }
+
+            if ($request->has('parent_only') && $request->parent_only == 'true') {
+                $query->parent();
+            }
+
+            if ($request->has('active') && $request->active == 'true') {
+                $query->active();
+            }
+
+            // Sorting
+            $sortBy = $request->get('sort_by', 'sort_order');
+            $sortOrder = $request->get('sort_order', 'asc');
+            $query->orderBy($sortBy, $sortOrder);
+
+            // Pagination or get all
+            if ($request->has('paginate') && $request->paginate == 'true') {
+                $perPage = $request->get('per_page', 15);
+                $categories = $query->paginate($perPage);
+            } else {
+                $categories = $query->get();
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $categories
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch categories with products',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get featured categories (Public)
      */
     public function featured()
