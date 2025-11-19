@@ -21,6 +21,8 @@ use App\Http\Controllers\Api\DealController;
 use App\Http\Controllers\Api\AdminDealController;
 use App\Http\Controllers\Api\SupportTicketController;
 use App\Http\Controllers\Api\SupportMessageController;
+use App\Http\Controllers\Api\AdminDashboardController;
+use App\Http\Controllers\Api\ExportReportController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -296,7 +298,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
         
         // Admin Deal Management
-        Route::prefix('deals')->group(function () {
+        Route::prefix('admin/deals')->group(function () {
             Route::get('/', [AdminDealController::class, 'index']);
             Route::post('/', [AdminDealController::class, 'store']);
             Route::get('/stats', [AdminDealController::class, 'stats']);
@@ -315,6 +317,26 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{ticket}/priority', [SupportTicketController::class, 'updatePriority']);
             Route::post('/{ticket}/assign', [SupportTicketController::class, 'assign']);
             Route::delete('/{ticket}', [SupportTicketController::class, 'destroy']);
+        });
+        
+        // Admin Dashboard Routes
+        Route::prefix('dashboard')->group(function () {
+            Route::get('/stats', [AdminDashboardController::class, 'stats']);
+            Route::get('/sales-trends', [AdminDashboardController::class, 'salesTrends']);
+            Route::get('/top-products', [AdminDashboardController::class, 'topProducts']);
+            Route::get('/top-customers', [AdminDashboardController::class, 'topCustomers']);
+            Route::get('/recent-orders', [AdminDashboardController::class, 'recentOrders']);
+            Route::get('/low-stock-alerts', [AdminDashboardController::class, 'lowStockAlerts']);
+            Route::get('/category-sales', [AdminDashboardController::class, 'categorySales']);
+        });
+        
+        // Export Report Routes
+        Route::prefix('exports')->group(function () {
+            Route::get('/orders', [ExportReportController::class, 'exportOrders']);
+            Route::get('/products', [ExportReportController::class, 'exportProducts']);
+            Route::get('/customers', [ExportReportController::class, 'exportCustomers']);
+            Route::get('/sales-report', [ExportReportController::class, 'exportSalesReport']);
+            Route::get('/product-sales-report', [ExportReportController::class, 'exportProductSalesReport']);
         });
         
         // Roles & Permissions Management (Admin only - requires roles.manage permission)

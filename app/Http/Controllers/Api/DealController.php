@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Deal;
 use App\Models\Customer;
 use App\Models\Product;
+use App\Models\Category;
 use App\Services\DealService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -116,22 +117,31 @@ class DealController extends Controller
             }
 
             // Load related products/categories if applicable
-            if ($deal->applicable_products) {
-                $deal->load(['products' => function($query) use ($deal) {
-                    $query->whereIn('id', $deal->applicable_products)
-                          ->with(['category', 'media']);
-                }]);
+            $products = null;
+            if ($deal->applicable_products && is_array($deal->applicable_products)) {
+                $products = Product::whereIn('id', $deal->applicable_products)
+                    ->with(['category', 'media'])
+                    ->get();
             }
 
-            if ($deal->applicable_categories) {
-                $deal->load(['categories' => function($query) use ($deal) {
-                    $query->whereIn('id', $deal->applicable_categories);
-                }]);
+            $categories = null;
+            if ($deal->applicable_categories && is_array($deal->applicable_categories)) {
+                $categories = Category::whereIn('id', $deal->applicable_categories)
+                    ->get();
+            }
+
+            // Add products and categories to deal data
+            $dealData = $deal->toArray();
+            if ($products !== null) {
+                $dealData['products'] = $products;
+            }
+            if ($categories !== null) {
+                $dealData['categories'] = $categories;
             }
 
             return response()->json([
                 'success' => true,
-                'data' => $deal
+                'data' => $dealData
             ]);
         } catch (\Exception $e) {
             return response()->json([
