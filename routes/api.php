@@ -19,6 +19,8 @@ use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\DealController;
 use App\Http\Controllers\Api\AdminDealController;
+use App\Http\Controllers\Api\SupportTicketController;
+use App\Http\Controllers\Api\SupportMessageController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -101,12 +103,19 @@ Route::middleware('customer')->prefix('customer')->group(function () {
 // (customerOrders and show methods handle both cases)
 Route::middleware('auth.any')->group(function () {
     Route::get('/orders', [OrderController::class, 'customerOrders']);
-    Route::get('/orders/{order}', [OrderController::class, 'show']);
+    // Exclude 'stats' and 'pending-cancellations' from matching as order ID
+    Route::get('/orders/{order}', [OrderController::class, 'show'])
+        ->where('order', '^(?!stats$|pending-cancellations$).*$');
 });
 
 // Customer-only order routes - use customer middleware
 Route::middleware('customer')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);
+    
+    // Customer Order Cancellation Routes
+    // Exclude 'stats' and 'pending-cancellations' from matching as order ID
+    Route::post('/orders/{order}/request-cancellation', [OrderController::class, 'requestCancellation'])
+        ->where('order', '^(?!stats$|pending-cancellations$).*$');
     
     // Customer Purchase Management Routes
     Route::prefix('purchase')->group(function () {
@@ -123,6 +132,38 @@ Route::middleware('customer')->group(function () {
     Route::prefix('deals')->group(function () {
         Route::post('/validate', [DealController::class, 'validate']);
     });
+    
+    // Customer Support Ticket Routes
+    Route::post('/support-tickets', [SupportTicketController::class, 'store']);
+});
+
+// Order cancellation route - accessible to both customers and admins
+Route::middleware('auth.any')->group(function () {
+    // Exclude 'stats' and 'pending-cancellations' from matching as order ID
+    Route::post('/orders/{order}/cancel', [OrderController::class, 'cancelOrder'])
+        ->where('order', '^(?!stats$|pending-cancellations$).*$');
+    
+    // Support Ticket routes - accessible to both customers and admins
+    // GET /support-tickets - accessible to both customers and admins
+    // (customerTickets and index methods handle both cases)
+    Route::get('/support-tickets', [SupportTicketController::class, 'customerTickets']);
+    
+    // Support Ticket Navbar routes - must come before parameterized routes
+    Route::get('/support-tickets/navbar/count', [SupportTicketController::class, 'navbarCount']);
+    Route::get('/support-tickets/navbar/latest', [SupportTicketController::class, 'navbarLatest']);
+    
+    // Support Ticket routes - accessible to both customers and admins
+    // Exclude 'stats' and 'navbar' from matching as ticket ID
+    Route::get('/support-tickets/{ticket}', [SupportTicketController::class, 'show'])
+        ->where('ticket', '^(?!stats$|navbar).*$');
+    
+    // Support Message routes - accessible to both customers and admins
+    // Exclude 'stats' and 'navbar' from matching as ticket ID
+    Route::get('/support-tickets/{ticket}/messages', [SupportMessageController::class, 'index'])
+        ->where('ticket', '^(?!stats$|navbar).*$');
+    Route::post('/support-tickets/{ticket}/messages', [SupportMessageController::class, 'store'])
+        ->where('ticket', '^(?!stats$|navbar).*$');
+    Route::put('/support-messages/{message}/read', [SupportMessageController::class, 'markAsRead']);
 });
 
 // Protected routes (Admin/User authentication)
@@ -184,9 +225,20 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // Admin Order Management
         // Note: GET /orders is handled by customerOrders route above (supports both customers and admins)
+        // Specific routes must come before parameterized routes
         Route::get('/orders/stats', [OrderController::class, 'stats']);
-        Route::put('/orders/{order}', [OrderController::class, 'update']);
-        Route::delete('/orders/{order}', [OrderController::class, 'destroy']);
+        Route::get('/orders/pending-cancellations', [OrderController::class, 'pendingCancellations']);
+        // Exclude 'stats' and 'pending-cancellations' from matching as order ID
+        Route::put('/orders/{order}', [OrderController::class, 'update'])
+            ->where('order', '^(?!stats$|pending-cancellations$).*$');
+        Route::delete('/orders/{order}', [OrderController::class, 'destroy'])
+            ->where('order', '^(?!stats$|pending-cancellations$).*$');
+        
+        // Admin Order Cancellation Routes
+        Route::post('/orders/{order}/approve-cancellation', [OrderController::class, 'approveCancellation'])
+            ->where('order', '^(?!stats$|pending-cancellations$).*$');
+        Route::post('/orders/{order}/reject-cancellation', [OrderController::class, 'rejectCancellation'])
+            ->where('order', '^(?!stats$|pending-cancellations$).*$');
         
         // Admin Contact Management
         Route::prefix('admin')->group(function () {
@@ -253,6 +305,16 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{deal}', [AdminDealController::class, 'destroy']);
             Route::post('/{deal}/toggle-active', [AdminDealController::class, 'toggleActive']);
             Route::post('/{deal}/toggle-featured', [AdminDealController::class, 'toggleFeatured']);
+        });
+        
+        // Admin Support Ticket Management
+        Route::prefix('support-tickets')->group(function () {
+            // Note: GET /support-tickets is handled by customerTickets route above (supports both customers and admins)
+            Route::get('/stats', [SupportTicketController::class, 'stats']); // Must come before /{ticket} routes
+            Route::put('/{ticket}/status', [SupportTicketController::class, 'updateStatus']);
+            Route::put('/{ticket}/priority', [SupportTicketController::class, 'updatePriority']);
+            Route::post('/{ticket}/assign', [SupportTicketController::class, 'assign']);
+            Route::delete('/{ticket}', [SupportTicketController::class, 'destroy']);
         });
         
         // Roles & Permissions Management (Admin only - requires roles.manage permission)

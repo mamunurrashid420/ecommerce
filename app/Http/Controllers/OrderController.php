@@ -245,6 +245,192 @@ class OrderController extends Controller
     }
 
     /**
+     * Request order cancellation (Customer only)
+     * 
+     * @param Request $request
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function requestCancellation(Request $request, Order $order)
+    {
+        try {
+            $request->validate([
+                'reason' => 'nullable|string|max:1000',
+            ]);
+
+            $customer = $this->getAuthenticatedCustomer();
+
+            $result = $this->orderService->requestCancellation(
+                $order->id,
+                $customer->id,
+                $request->reason
+            );
+
+            return response()->json($result);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Approve cancellation request (Admin only)
+     * 
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function approveCancellation(Order $order)
+    {
+        try {
+            $result = $this->orderService->approveCancellation($order->id);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Reject cancellation request (Admin only)
+     * 
+     * @param Request $request
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function rejectCancellation(Request $request, Order $order)
+    {
+        try {
+            $request->validate([
+                'admin_note' => 'nullable|string|max:1000',
+            ]);
+
+            $result = $this->orderService->rejectCancellation(
+                $order->id,
+                $request->admin_note
+            );
+
+            return response()->json($result);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Cancel order directly (Admin or Customer for pending orders)
+     * 
+     * @param Request $request
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function cancelOrder(Request $request, Order $order)
+    {
+        try {
+            $request->validate([
+                'reason' => 'nullable|string|max:1000',
+            ]);
+
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            // Determine who is cancelling
+            $cancelledBy = $this->isAdmin() ? 'admin' : 'customer';
+            
+            // If customer, verify ownership
+            if ($cancelledBy === 'customer') {
+                if (!($user instanceof \App\Models\Customer)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Customer authentication required for this action'
+                    ], 403);
+                }
+                
+                if ($order->customer_id !== $user->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized access to this order'
+                    ], 403);
+                }
+            }
+
+            $result = $this->orderService->cancelOrder(
+                $order->id,
+                $cancelledBy,
+                $request->reason
+            );
+
+            return response()->json($result);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Get pending cancellation requests (Admin only)
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function pendingCancellations(Request $request)
+    {
+        try {
+            $filters = [
+                'customer_id' => $request->get('customer_id'),
+                'search' => $request->get('search'),
+                'date_from' => $request->get('date_from'),
+                'date_to' => $request->get('date_to'),
+                'sort_by' => $request->get('sort_by', 'cancellation_requested_at'),
+                'sort_order' => $request->get('sort_order', 'desc'),
+            ];
+
+            $perPage = $request->get('per_page', 15);
+            $result = $this->orderService->getPendingCancellationRequests($filters, $perPage);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve pending cancellation requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get authenticated customer
      * 
      * @return Customer

@@ -8,6 +8,10 @@ use App\Models\Product;
 use App\Models\Customer;
 use App\Models\User;
 use App\Notifications\NewOrderNotification;
+use App\Notifications\OrderCancellationRequestNotification;
+use App\Notifications\OrderCancellationApprovedNotification;
+use App\Notifications\OrderCancellationRejectedNotification;
+use App\Notifications\OrderCancelledNotification;
 use App\Services\InventoryService;
 use App\Services\PurchaseService;
 use App\Services\CouponService;
@@ -67,10 +71,13 @@ class OrderService
             // Generate unique order number
             $orderNumber = $this->generateOrderNumber();
             
+            // Get site settings for shipping and tax calculations
+            $siteSettings = \App\Models\SiteSetting::getInstance();
+            
             // Calculate subtotal from validated items
             $subtotal = $validation['total_amount'];
             $discountAmount = 0;
-            $totalAmount = $subtotal;
+            $afterDiscountAmount = $subtotal;
             $couponId = null;
             $couponCode = null;
             
@@ -85,7 +92,7 @@ class OrderService
                     
                     $subtotal = $couponResult['subtotal'];
                     $discountAmount = $couponResult['discount_amount'];
-                    $totalAmount = $couponResult['total_after_discount'];
+                    $afterDiscountAmount = $couponResult['total_after_discount'];
                     $couponId = $couponResult['coupon']->id;
                     $couponCode = $couponResult['coupon']->code;
                 } catch (Exception $e) {
@@ -99,6 +106,36 @@ class OrderService
                 }
             }
             
+            // Calculate shipping cost
+            $shippingCost = 0;
+            if ($siteSettings->free_shipping_threshold && $afterDiscountAmount >= $siteSettings->free_shipping_threshold) {
+                $shippingCost = 0; // Free shipping
+            } else {
+                $shippingCost = $siteSettings->shipping_cost ?? 0;
+            }
+            
+            // Calculate tax
+            $taxRate = $siteSettings->tax_rate ?? 0;
+            $taxInclusive = $siteSettings->tax_inclusive ?? false;
+            $taxAmount = 0;
+            
+            if ($taxRate > 0) {
+                if ($taxInclusive) {
+                    // Tax is already included in product prices
+                    // Calculate the tax amount that's already included
+                    $taxAmount = $afterDiscountAmount * ($taxRate / (100 + $taxRate));
+                } else {
+                    // Tax is added on top
+                    $taxAmount = $afterDiscountAmount * ($taxRate / 100);
+                }
+            }
+            
+            // Calculate final total
+            $totalAmount = $afterDiscountAmount + $shippingCost;
+            if (!$taxInclusive && $taxAmount > 0) {
+                $totalAmount += $taxAmount;
+            }
+            
             // Create order
             $order = Order::create([
                 'order_number' => $orderNumber,
@@ -107,6 +144,10 @@ class OrderService
                 'coupon_code' => $couponCode,
                 'subtotal' => $subtotal,
                 'discount_amount' => $discountAmount,
+                'shipping_cost' => $shippingCost,
+                'tax_amount' => $taxAmount,
+                'tax_rate' => $taxRate,
+                'tax_inclusive' => $taxInclusive,
                 'total_amount' => $totalAmount,
                 'status' => 'pending',
                 'shipping_address' => $data['shipping_address'],
@@ -504,6 +545,381 @@ class OrderService
         if (!in_array($newStatus, $validTransitions[$oldStatus])) {
             throw new Exception("Cannot transition from '{$oldStatus}' to '{$newStatus}'");
         }
+    }
+
+    /**
+     * Request order cancellation (Customer)
+     * 
+     * @param int $orderId
+     * @param int $customerId
+     * @param string|null $reason
+     * @return array
+     * @throws Exception
+     */
+    public function requestCancellation(int $orderId, int $customerId, ?string $reason = null): array
+    {
+        DB::beginTransaction();
+        
+        try {
+            $order = Order::lockForUpdate()->findOrFail($orderId);
+            
+            // Verify ownership
+            if ($order->customer_id !== $customerId) {
+                throw new Exception('Unauthorized access to this order');
+            }
+            
+            // Check if order can request cancellation
+            if (!$order->canRequestCancellation()) {
+                throw new Exception('Order cannot be cancelled. Only pending orders without existing cancellation requests can be cancelled.');
+            }
+            
+            // Set cancellation request
+            $order->cancellation_requested_at = now();
+            $order->cancellation_reason = $reason;
+            $order->cancellation_requested_by = 'customer';
+            $order->save();
+            
+            DB::commit();
+            
+            // Load customer relationship for notifications
+            $order->load('customer');
+            
+            // Send notifications to all admin users
+            try {
+                $adminUsers = User::where('role', 'admin')->get();
+                foreach ($adminUsers as $admin) {
+                    $admin->notify(new OrderCancellationRequestNotification($order));
+                }
+            } catch (Exception $e) {
+                // Log notification error but don't fail the cancellation request
+                Log::warning('Failed to send cancellation request notification to admin users', [
+                    'order_id' => $orderId,
+                    'error' => $e->getMessage()
+                ]);
+            }
+            
+            Log::info('Order cancellation requested', [
+                'order_id' => $orderId,
+                'customer_id' => $customerId,
+                'reason' => $reason
+            ]);
+            
+            return [
+                'success' => true,
+                'message' => 'Cancellation request submitted successfully. Waiting for admin approval.',
+                'order' => $order->load(['customer', 'orderItems.product']),
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Order cancellation request failed', [
+                'order_id' => $orderId,
+                'customer_id' => $customerId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Approve cancellation request (Admin)
+     * 
+     * @param int $orderId
+     * @return array
+     * @throws Exception
+     */
+    public function approveCancellation(int $orderId): array
+    {
+        DB::beginTransaction();
+        
+        try {
+            $order = Order::lockForUpdate()->findOrFail($orderId);
+            
+            // Check if there's a pending cancellation request
+            if (!$order->hasPendingCancellationRequest()) {
+                throw new Exception('No pending cancellation request found for this order');
+            }
+            
+            // Check if order can still be cancelled
+            if (!$order->canBeCancelled()) {
+                throw new Exception("Order cannot be cancelled. Current status: {$order->status}");
+            }
+            
+            $oldStatus = $order->status;
+            
+            // Cancel the order
+            $order->status = 'cancelled';
+            $order->cancelled_at = now();
+            $order->cancelled_by = 'admin';
+            $order->save();
+            
+            // Release stock
+            foreach ($order->orderItems as $item) {
+                $this->inventoryService->releaseStock(
+                    $item->product_id,
+                    $item->quantity,
+                    $order->id
+                );
+            }
+            
+            DB::commit();
+            
+            // Load customer relationship for notifications
+            $order->load('customer');
+            
+            // Send notification to customer
+            try {
+                $order->customer->notify(new OrderCancellationApprovedNotification($order));
+            } catch (Exception $e) {
+                // Log notification error but don't fail the cancellation approval
+                Log::warning('Failed to send cancellation approval notification to customer', [
+                    'order_id' => $orderId,
+                    'customer_id' => $order->customer_id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+            
+            Log::info('Order cancellation approved', [
+                'order_id' => $orderId,
+                'old_status' => $oldStatus
+            ]);
+            
+            return [
+                'success' => true,
+                'message' => 'Order cancellation approved successfully',
+                'order' => $order->load(['customer', 'orderItems.product']),
+                'old_status' => $oldStatus,
+                'new_status' => 'cancelled',
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Order cancellation approval failed', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Reject cancellation request (Admin)
+     * 
+     * @param int $orderId
+     * @param string|null $adminNote
+     * @return array
+     * @throws Exception
+     */
+    public function rejectCancellation(int $orderId, ?string $adminNote = null): array
+    {
+        DB::beginTransaction();
+        
+        try {
+            $order = Order::lockForUpdate()->findOrFail($orderId);
+            
+            // Check if there's a pending cancellation request
+            if (!$order->hasPendingCancellationRequest()) {
+                throw new Exception('No pending cancellation request found for this order');
+            }
+            
+            // Clear cancellation request
+            $order->cancellation_requested_at = null;
+            $order->cancellation_reason = $adminNote ? 
+                ($order->cancellation_reason . "\n\nAdmin Note: " . $adminNote) : 
+                $order->cancellation_reason;
+            $order->cancellation_requested_by = null;
+            $order->save();
+            
+            DB::commit();
+            
+            // Load customer relationship for notifications
+            $order->load('customer');
+            
+            // Send notification to customer
+            try {
+                $order->customer->notify(new OrderCancellationRejectedNotification($order, $adminNote));
+            } catch (Exception $e) {
+                // Log notification error but don't fail the cancellation rejection
+                Log::warning('Failed to send cancellation rejection notification to customer', [
+                    'order_id' => $orderId,
+                    'customer_id' => $order->customer_id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+            
+            Log::info('Order cancellation rejected', [
+                'order_id' => $orderId,
+                'admin_note' => $adminNote
+            ]);
+            
+            return [
+                'success' => true,
+                'message' => 'Cancellation request rejected',
+                'order' => $order->load(['customer', 'orderItems.product']),
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Order cancellation rejection failed', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Cancel order directly (Admin or Customer for pending orders)
+     * 
+     * @param int $orderId
+     * @param string $cancelledBy 'customer' or 'admin'
+     * @param string|null $reason
+     * @return array
+     * @throws Exception
+     */
+    public function cancelOrder(int $orderId, string $cancelledBy, ?string $reason = null): array
+    {
+        DB::beginTransaction();
+        
+        try {
+            $order = Order::lockForUpdate()->findOrFail($orderId);
+            
+            // Validate cancelled_by value
+            if (!in_array($cancelledBy, ['customer', 'admin'])) {
+                throw new Exception("Invalid cancelled_by value. Must be 'customer' or 'admin'");
+            }
+            
+            // Check if order can be cancelled
+            if (!$order->canBeCancelled()) {
+                throw new Exception("Order cannot be cancelled. Current status: {$order->status}");
+            }
+            
+            // If customer is cancelling, verify ownership
+            if ($cancelledBy === 'customer') {
+                // This will be checked in the controller
+            }
+            
+            $oldStatus = $order->status;
+            
+            // Cancel the order
+            $order->status = 'cancelled';
+            $order->cancelled_at = now();
+            $order->cancelled_by = $cancelledBy;
+            $order->cancellation_reason = $reason;
+            // Clear any pending cancellation request
+            $order->cancellation_requested_at = null;
+            $order->cancellation_requested_by = null;
+            $order->save();
+            
+            // Release stock
+            foreach ($order->orderItems as $item) {
+                $this->inventoryService->releaseStock(
+                    $item->product_id,
+                    $item->quantity,
+                    $order->id
+                );
+            }
+            
+            DB::commit();
+            
+            // Load customer relationship for notifications
+            $order->load('customer');
+            
+            // Send notification to customer
+            try {
+                $order->customer->notify(new OrderCancelledNotification($order));
+            } catch (Exception $e) {
+                // Log notification error but don't fail the cancellation
+                Log::warning('Failed to send cancellation notification to customer', [
+                    'order_id' => $orderId,
+                    'customer_id' => $order->customer_id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+            
+            Log::info('Order cancelled directly', [
+                'order_id' => $orderId,
+                'cancelled_by' => $cancelledBy,
+                'old_status' => $oldStatus,
+                'reason' => $reason
+            ]);
+            
+            return [
+                'success' => true,
+                'message' => 'Order cancelled successfully',
+                'order' => $order->load(['customer', 'orderItems.product']),
+                'old_status' => $oldStatus,
+                'new_status' => 'cancelled',
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Order cancellation failed', [
+                'order_id' => $orderId,
+                'cancelled_by' => $cancelledBy,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Get orders with pending cancellation requests (Admin)
+     * 
+     * @param array $filters
+     * @param int $perPage
+     * @return array
+     */
+    public function getPendingCancellationRequests(array $filters = [], int $perPage = 15): array
+    {
+        $query = Order::with(['customer', 'orderItems.product', 'coupon'])
+            ->whereNotNull('cancellation_requested_at')
+            ->where('status', '!=', 'cancelled');
+        
+        // Filter by customer
+        if (isset($filters['customer_id']) && $filters['customer_id']) {
+            $query->where('customer_id', $filters['customer_id']);
+        }
+        
+        // Search by order number
+        if (isset($filters['search']) && $filters['search']) {
+            $search = $filters['search'];
+            $query->where(function($q) use ($search) {
+                $q->where('order_number', 'like', "%{$search}%")
+                  ->orWhereHas('customer', function($q) use ($search) {
+                      $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('phone', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                  });
+            });
+        }
+        
+        // Date range filter
+        if (isset($filters['date_from']) && $filters['date_from']) {
+            $query->whereDate('cancellation_requested_at', '>=', $filters['date_from']);
+        }
+        
+        if (isset($filters['date_to']) && $filters['date_to']) {
+            $query->whereDate('cancellation_requested_at', '<=', $filters['date_to']);
+        }
+        
+        // Sort
+        $sortBy = $filters['sort_by'] ?? 'cancellation_requested_at';
+        $sortOrder = $filters['sort_order'] ?? 'desc';
+        $query->orderBy($sortBy, $sortOrder);
+        
+        $orders = $query->paginate($perPage);
+        
+        return [
+            'success' => true,
+            'data' => $orders->items(),
+            'pagination' => [
+                'current_page' => $orders->currentPage(),
+                'last_page' => $orders->lastPage(),
+                'per_page' => $orders->perPage(),
+                'total' => $orders->total(),
+            ],
+        ];
     }
 
     /**

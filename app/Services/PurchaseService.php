@@ -437,13 +437,58 @@ class PurchaseService
 
             // Validate items
             $validation = $this->validatePurchaseItems($items);
+            
+            // Get site settings for shipping and tax calculations
+            $siteSettings = \App\Models\SiteSetting::getInstance();
+            
+            $subtotal = $validation['total_amount'];
+            
+            // Calculate shipping cost
+            $shippingCost = 0;
+            $freeShippingThreshold = $siteSettings->free_shipping_threshold ?? 0;
+            $baseShippingCost = $siteSettings->shipping_cost ?? 0;
+            
+            if ($freeShippingThreshold > 0 && $subtotal >= $freeShippingThreshold) {
+                $shippingCost = 0; // Free shipping
+            } else {
+                $shippingCost = $baseShippingCost;
+            }
+            
+            // Calculate tax
+            $taxRate = $siteSettings->tax_rate ?? 0;
+            $taxInclusive = $siteSettings->tax_inclusive ?? false;
+            $taxAmount = 0;
+            
+            if ($taxRate > 0) {
+                if ($taxInclusive) {
+                    // Tax is already included in product prices
+                    // Calculate the tax amount that's already included
+                    $taxAmount = ($subtotal + $shippingCost) * ($taxRate / (100 + $taxRate));
+                } else {
+                    // Tax is added on top
+                    $taxAmount = ($subtotal + $shippingCost) * ($taxRate / 100);
+                }
+            }
+            
+            // Calculate final total
+            $totalAmount = $subtotal + $shippingCost;
+            if (!$taxInclusive && $taxAmount > 0) {
+                $totalAmount += $taxAmount;
+            }
 
             return [
                 'success' => true,
                 'summary' => [
                     'total_items' => $validation['total_items'],
                     'total_quantity' => $validation['total_quantity'],
-                    'total_amount' => $validation['total_amount'],
+                    'subtotal' => round($subtotal, 2),
+                    'shipping_cost' => round($shippingCost, 2),
+                    'tax_amount' => round($taxAmount, 2),
+                    'tax_rate' => $taxRate,
+                    'tax_inclusive' => $taxInclusive,
+                    'free_shipping_threshold' => $freeShippingThreshold,
+                    'qualifies_for_free_shipping' => $freeShippingThreshold > 0 && $subtotal >= $freeShippingThreshold,
+                    'total_amount' => round($totalAmount, 2),
                     'items' => array_map(function ($item) {
                         return [
                             'product_id' => $item['product_id'],
