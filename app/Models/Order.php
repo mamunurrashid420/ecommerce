@@ -44,4 +44,9 @@ class Order extends Model
     {
         return $this->hasOne(CouponUsage::class);
     }
+
+    public function dealUsages()
+    {
+        return $this->hasMany(DealUsage::class);
+    }
 }

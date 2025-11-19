@@ -17,6 +17,8 @@ use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\Api\CouponController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\ContactController;
+use App\Http\Controllers\Api\DealController;
+use App\Http\Controllers\Api\AdminDealController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -54,6 +56,16 @@ Route::post('/contact', [ContactController::class, 'submitContactForm']);
 
 // Public Coupon routes
 Route::get('/coupons/available', [CouponController::class, 'available']);
+
+// Public Deal routes (No authentication required)
+Route::prefix('deals')->group(function () {
+    Route::get('/', [DealController::class, 'index']);
+    Route::get('/featured', [DealController::class, 'featured']);
+    Route::get('/flash', [DealController::class, 'flashDeals']);
+    Route::get('/product/{productId}', [DealController::class, 'forProduct']);
+    Route::get('/category/{categoryId}', [DealController::class, 'forCategory']);
+    Route::get('/{identifier}', [DealController::class, 'show']);
+});
 
 // Admin User Management Routes (Protected - Admin only)
 Route::middleware(['auth:sanctum', 'admin'])->group(function () {
@@ -105,6 +117,11 @@ Route::middleware('customer')->group(function () {
     // Customer Coupon Routes
     Route::prefix('coupons')->group(function () {
         Route::post('/validate', [CouponController::class, 'validate']);
+    });
+    
+    // Customer Deal Routes
+    Route::prefix('deals')->group(function () {
+        Route::post('/validate', [DealController::class, 'validate']);
     });
 });
 
@@ -224,6 +241,18 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{coupon}', [CouponController::class, 'update']);
             Route::delete('/{coupon}', [CouponController::class, 'destroy']);
             Route::post('/{coupon}/toggle-active', [CouponController::class, 'toggleActive']);
+        });
+        
+        // Admin Deal Management
+        Route::prefix('deals')->group(function () {
+            Route::get('/', [AdminDealController::class, 'index']);
+            Route::post('/', [AdminDealController::class, 'store']);
+            Route::get('/stats', [AdminDealController::class, 'stats']);
+            Route::get('/{deal}', [AdminDealController::class, 'show']);
+            Route::put('/{deal}', [AdminDealController::class, 'update']);
+            Route::delete('/{deal}', [AdminDealController::class, 'destroy']);
+            Route::post('/{deal}/toggle-active', [AdminDealController::class, 'toggleActive']);
+            Route::post('/{deal}/toggle-featured', [AdminDealController::class, 'toggleFeatured']);
         });
         
         // Roles & Permissions Management (Admin only - requires roles.manage permission)

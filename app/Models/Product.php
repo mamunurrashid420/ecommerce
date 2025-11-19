@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Deal;
 
 class Product extends Model
 {
@@ -67,5 +68,22 @@ class Product extends Model
     public function getVideosAttribute()
     {
         return $this->media()->where('type', 'video')->get();
+    }
+
+    /**
+     * Get deals that apply to this product
+     * Note: This is a method, not a relationship, due to JSON field queries
+     */
+    public function getDeals()
+    {
+        return Deal::where(function($query) {
+            $query->where('type', 'product')
+                  ->whereJsonContains('applicable_products', $this->id);
+        })->orWhere(function($query) {
+            if ($this->category_id) {
+                $query->where('type', 'category')
+                      ->whereJsonContains('applicable_categories', $this->category_id);
+            }
+        })->valid()->get();
     }
 }
