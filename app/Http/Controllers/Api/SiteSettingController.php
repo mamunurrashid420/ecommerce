@@ -168,11 +168,37 @@ class SiteSettingController extends Controller
                 $rules['slider_hyperlinks'] = 'nullable|array';
                 $rules['slider_hyperlinks.*'] = 'nullable|url|max:500';
             } elseif ($request->has('slider_images')) {
+                // Normalize slider_images to ensure it's an array
+                $sliderImages = $request->input('slider_images');
+                
+                // If it's a JSON string, decode it
+                if (is_string($sliderImages)) {
+                    $decoded = json_decode($sliderImages, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $request->merge(['slider_images' => $decoded]);
+                        $sliderImages = $decoded;
+                    } else {
+                        // If it's not valid JSON, treat as empty array
+                        $request->merge(['slider_images' => []]);
+                        $sliderImages = [];
+                    }
+                }
+                
+                // Ensure it's an array
+                if (!is_array($sliderImages)) {
+                    $request->merge(['slider_images' => []]);
+                    $sliderImages = [];
+                }
+                
                 $rules['slider_images'] = 'nullable|array';
-                $rules['slider_images.*.image'] = 'nullable|string';
-                $rules['slider_images.*.title'] = 'nullable|string|max:255';
-                $rules['slider_images.*.subtitle'] = 'nullable|string|max:500';
-                $rules['slider_images.*.hyperlink'] = 'nullable|url|max:500';
+                
+                // Only add nested validation rules if array is not empty
+                if (!empty($sliderImages)) {
+                    $rules['slider_images.*.image'] = 'nullable|string';
+                    $rules['slider_images.*.title'] = 'nullable|string|max:255';
+                    $rules['slider_images.*.subtitle'] = 'nullable|string|max:500';
+                    $rules['slider_images.*.hyperlink'] = 'nullable|url|max:500';
+                }
             }
 
             $validator = Validator::make($request->all(), $rules);
@@ -240,10 +266,28 @@ class SiteSettingController extends Controller
             } elseif ($request->has('slider_images')) {
                 // If slider_images is provided as an array (for updating/reordering/deleting)
                 $newImages = $request->input('slider_images', []);
+                
+                // Normalize to ensure it's an array
+                if (is_string($newImages)) {
+                    $decoded = json_decode($newImages, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $newImages = $decoded;
+                    } else {
+                        $newImages = [];
+                    }
+                }
+                
+                if (!is_array($newImages)) {
+                    $newImages = [];
+                }
+                
                 $existingImages = $settings->slider_images ?? [];
+                if (!is_array($existingImages)) {
+                    $existingImages = [];
+                }
                 
                 // Find images that were removed and delete them
-                if (is_array($existingImages) && is_array($newImages)) {
+                if (!empty($existingImages) && !empty($newImages)) {
                     $existingPaths = array_map(function ($item) {
                         return is_array($item) ? ($item['image'] ?? null) : $item;
                     }, $existingImages);
@@ -258,27 +302,38 @@ class SiteSettingController extends Controller
                             Storage::delete($removedPath);
                         }
                     }
+                } elseif (empty($newImages) && !empty($existingImages)) {
+                    // If new images is empty but existing images exist, delete all existing images
+                    foreach ($existingImages as $item) {
+                        $imagePath = is_array($item) ? ($item['image'] ?? null) : $item;
+                        if ($imagePath) {
+                            Storage::delete($imagePath);
+                        }
+                    }
                 }
                 
                 // Ensure all items are in the correct format
-                $formattedImages = array_map(function ($item) {
-                    if (is_string($item)) {
-                        // Legacy format: convert to new format
+                $formattedImages = [];
+                if (!empty($newImages)) {
+                    $formattedImages = array_map(function ($item) {
+                        if (is_string($item)) {
+                            // Legacy format: convert to new format
+                            return [
+                                'image' => $item,
+                                'title' => null,
+                                'subtitle' => null,
+                                'hyperlink' => null,
+                            ];
+                        }
+                        // New format: ensure all fields are present
                         return [
-                            'image' => $item,
-                            'title' => null,
-                            'subtitle' => null,
-                            'hyperlink' => null,
+                            'image' => $item['image'] ?? null,
+                            'title' => $item['title'] ?? null,
+                            'subtitle' => $item['subtitle'] ?? null,
+                            'hyperlink' => $item['hyperlink'] ?? null,
                         ];
-                    }
-                    // New format: ensure all fields are present
-                    return [
-                        'image' => $item['image'] ?? null,
-                        'title' => $item['title'] ?? null,
-                        'subtitle' => $item['subtitle'] ?? null,
-                        'hyperlink' => $item['hyperlink'] ?? null,
-                    ];
-                }, $newImages);
+                    }, $newImages);
+                }
                 
                 $data['slider_images'] = $formattedImages;
             }

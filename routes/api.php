@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\SupportTicketController;
 use App\Http\Controllers\Api\SupportMessageController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\ExportReportController;
+use App\Http\Controllers\Api\LandingPageController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -30,11 +31,12 @@ use Illuminate\Support\Facades\Route;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
-// Customer Authentication (Phone/OTP)
+// Customer Authentication (Email/Password)
 Route::prefix('customer')->group(function () {
-    Route::post('/send-otp', [CustomerAuthController::class, 'sendOtp']);
     Route::post('/register', [CustomerAuthController::class, 'register']);
     Route::post('/login', [CustomerAuthController::class, 'login']);
+    Route::post('/forgot-password', [CustomerAuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [CustomerAuthController::class, 'resetPassword']);
 });
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
@@ -43,6 +45,14 @@ Route::get('/products/{product}', [ProductController::class, 'show']);
 Route::prefix('purchase')->group(function () {
     Route::post('/check-availability', [PurchaseController::class, 'checkAvailability']);
     Route::post('/summary', [PurchaseController::class, 'getSummary']);
+});
+
+// Landing Page API (Public - No authentication required)
+Route::prefix('landing')->group(function () {
+    Route::get('/', [LandingPageController::class, 'index']);
+    Route::get('/hero', [LandingPageController::class, 'hero']);
+    Route::get('/featured-products', [LandingPageController::class, 'featuredProducts']);
+    Route::get('/top-selling-products', [LandingPageController::class, 'topSellingProducts']);
 });
 
 // Public site settings (for frontend)
@@ -97,6 +107,7 @@ Route::get('/search', [SearchController::class, 'search']);
 Route::middleware('customer')->prefix('customer')->group(function () {
     Route::get('/profile', [CustomerAuthController::class, 'profile']);
     Route::put('/profile', [CustomerAuthController::class, 'updateProfile']);
+    Route::post('/change-password', [CustomerAuthController::class, 'changePassword']);
     Route::post('/logout', [CustomerAuthController::class, 'logout']);
 });
 
