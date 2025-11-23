@@ -12,11 +12,14 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Make email required and unique (for email/password authentication)
+        // First, update any null emails to a temporary unique value
+        \DB::statement("UPDATE customers SET email = CONCAT('temp_', id, '@temp.com') WHERE email IS NULL");
+        
+        // Drop unique constraint if it exists (to avoid duplicate constraint error)
+        \DB::statement("ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_email_unique");
+        
         Schema::table('customers', function (Blueprint $table) {
-            // Make email required and unique (for email/password authentication)
-            // First, update any null emails to a temporary unique value
-            \DB::statement('UPDATE customers SET email = CONCAT("temp_", id, "@temp.com") WHERE email IS NULL');
-            
             // Make email required and unique
             $table->string('email')->nullable(false)->unique()->change();
             
@@ -29,7 +32,7 @@ return new class extends Migration
             $table->string('password')->nullable(false)->change();
             
             // Make name required (for better user experience)
-            \DB::statement('UPDATE customers SET name = COALESCE(name, "Customer") WHERE name IS NULL');
+            \DB::statement("UPDATE customers SET name = COALESCE(name, 'Customer') WHERE name IS NULL");
             $table->string('name')->nullable(false)->change();
         });
     }
