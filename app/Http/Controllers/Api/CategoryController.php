@@ -110,6 +110,9 @@ class CategoryController extends Controller
     {
         try {
             $query = Category::with(['parent', 'creator', 'updater'])
+                ->whereHas('products', function ($query) {
+                    $query->where('is_active', true);
+                })
                 ->withCount(['products as active_products_count' => function ($query) {
                     $query->where('is_active', true);
                 }])
