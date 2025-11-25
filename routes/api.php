@@ -219,6 +219,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('products', ProductController::class)->except(['index', 'show']);
         // Product Management (Admin)
         Route::post('/products', [ProductController::class, 'store']);
+        Route::post('/products/bulk', [ProductController::class, 'bulkStore']);
         Route::put('/products/{product}', [ProductController::class, 'update']);
         Route::delete('/products/{product}', [ProductController::class, 'destroy']);
         

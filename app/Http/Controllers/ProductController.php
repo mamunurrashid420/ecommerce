@@ -118,7 +118,7 @@ class ProductController extends Controller
                 'brand' => 'nullable|string|max:100',
                 'model' => 'nullable|string|max:100',
                 'category_id' => 'required|exists:categories,id',
-                'tags' => 'nullable|string',
+                'tags' => 'nullable|string|array',
                 'is_active' => 'boolean',
                 'meta_title' => 'nullable|string|max:255',
                 'meta_description' => 'nullable|string|max:500',
@@ -126,6 +126,18 @@ class ProductController extends Controller
                 'image_url' => 'nullable|url',
                 'images' => 'nullable|array|max:10',
                 'images.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+                'media' => 'nullable|array',
+                'media.*.type' => 'required_with:media|string|in:image,video',
+                'media.*.url' => 'required_with:media|url',
+                'media.*.alt_text' => 'nullable|string|max:255',
+                'media.*.title' => 'nullable|string|max:255',
+                'media.*.is_thumbnail' => 'nullable|boolean',
+                'media.*.sort_order' => 'nullable|integer|min:0',
+                'custom_fields' => 'nullable|array',
+                'custom_fields.*.label_name' => 'required_with:custom_fields|string|max:255',
+                'custom_fields.*.value' => 'required_with:custom_fields|string',
+                'custom_fields.*.field_type' => 'nullable|string|max:50',
+                'custom_fields.*.sort_order' => 'nullable|integer|min:0',
             ]);
 
             if ($validator->fails()) {
@@ -151,9 +163,13 @@ class ProductController extends Controller
                 }
             }
 
-            // Convert tags string to array if provided
-            if (isset($data['tags']) && is_string($data['tags'])) {
-                $data['tags'] = array_map('trim', explode(',', $data['tags']));
+            // Convert tags to array if provided as string or array
+            if (isset($data['tags'])) {
+                if (is_string($data['tags'])) {
+                    $data['tags'] = array_map('trim', explode(',', $data['tags']));
+                } elseif (is_array($data['tags'])) {
+                    $data['tags'] = array_map('trim', $data['tags']);
+                }
             }
 
             // Set created_by and updated_by if authenticated and user exists
@@ -170,9 +186,19 @@ class ProductController extends Controller
             
             $product = Product::create($data);
 
-            // Handle multiple image uploads
+            // Handle media URLs (for seeder-like data)
+            if ($request->has('media') && is_array($request->media)) {
+                $this->handleMediaUrls($product, $request->media);
+            }
+
+            // Handle multiple image file uploads
             if ($request->hasFile('images')) {
                 $this->handleImageUploads($product, $request->file('images'));
+            }
+
+            // Handle custom fields
+            if ($request->has('custom_fields') && is_array($request->custom_fields)) {
+                $this->handleCustomFields($product, $request->custom_fields);
             }
 
             DB::commit();
@@ -180,7 +206,7 @@ class ProductController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Product created successfully',
-                'data' => $product->load(['category', 'media', 'creator', 'updater'])
+                'data' => $product->load(['category', 'media', 'customFields', 'creator', 'updater'])
             ], 201);
 
         } catch (\Exception $e) {
@@ -568,5 +594,336 @@ class ProductController extends Controller
         }
 
         return $uploadedImages;
+    }
+
+    /**
+     * Handle media URLs (for seeder-like data insertion)
+     */
+    private function handleMediaUrls($product, $mediaArray)
+    {
+        $existingMediaCount = $product->media()->count();
+        $hasThumbnail = $product->media()->where('is_thumbnail', true)->exists();
+
+        foreach ($mediaArray as $index => $mediaItem) {
+            $mediaData = [
+                'product_id' => $product->id,
+                'type' => $mediaItem['type'] ?? 'image',
+                'url' => $mediaItem['url'],
+                'alt_text' => $mediaItem['alt_text'] ?? null,
+                'title' => $mediaItem['title'] ?? null,
+                'is_thumbnail' => isset($mediaItem['is_thumbnail']) 
+                    ? (bool)$mediaItem['is_thumbnail'] 
+                    : (!$hasThumbnail && $index === 0 && ($mediaItem['type'] ?? 'image') === 'image'),
+                'sort_order' => $mediaItem['sort_order'] ?? ($existingMediaCount + $index + 1),
+            ];
+
+            ProductMedia::create($mediaData);
+
+            // Mark that we have a thumbnail if this one is set as thumbnail
+            if ($mediaData['is_thumbnail']) {
+                $hasThumbnail = true;
+            }
+        }
+    }
+
+    /**
+     * Handle custom fields
+     */
+    private function handleCustomFields($product, $customFieldsArray)
+    {
+        foreach ($customFieldsArray as $index => $field) {
+            \App\Models\ProductCustomField::create([
+                'product_id' => $product->id,
+                'label_name' => $field['label_name'],
+                'value' => $field['value'],
+                'field_type' => $field['field_type'] ?? 'text',
+                'sort_order' => $field['sort_order'] ?? ($index + 1),
+            ]);
+        }
+    }
+
+    /**
+     * Bulk insert products (useful for seeder data)
+     * If no products are provided in request, imports from products.php file
+     */
+    public function bulkStore(Request $request)
+    {
+        try {
+            $products = $request->input('products');
+            
+            // If no products provided, import from products.php file
+            if (empty($products)) {
+                $products = $this->importProductsFromFile();
+            }
+
+            // Validate products
+            $validator = \Illuminate\Support\Facades\Validator::make(['products' => $products], [
+                'products' => 'required|array|min:1',
+                'products.*.name' => 'required|string|max:255',
+                'products.*.slug' => 'nullable|string|max:255',
+                'products.*.description' => 'nullable|string',
+                'products.*.long_description' => 'nullable|string',
+                'products.*.price' => 'required|numeric|min:0',
+                'products.*.stock_quantity' => 'required|integer|min:0',
+                'products.*.sku' => 'required|string|max:100',
+                'products.*.weight' => 'nullable|numeric|min:0',
+                'products.*.dimensions' => 'nullable|string|max:100',
+                'products.*.brand' => 'nullable|string|max:100',
+                'products.*.model' => 'nullable|string|max:100',
+                'products.*.category_id' => 'required|exists:categories,id',
+                'products.*.tags' => 'nullable',
+                'products.*.is_active' => 'nullable|boolean',
+                'products.*.meta_title' => 'nullable|string|max:255',
+                'products.*.meta_description' => 'nullable|string|max:500',
+                'products.*.meta_keywords' => 'nullable|string|max:500',
+                'products.*.media' => 'nullable|array',
+                'products.*.media.*.type' => 'required_with:products.*.media|string|in:image,video',
+                'products.*.media.*.url' => 'required_with:products.*.media|url',
+                'products.*.media.*.alt_text' => 'nullable|string|max:255',
+                'products.*.media.*.title' => 'nullable|string|max:255',
+                'products.*.media.*.is_thumbnail' => 'nullable|boolean',
+                'products.*.media.*.sort_order' => 'nullable|integer|min:0',
+                'products.*.custom_fields' => 'nullable|array',
+                'products.*.custom_fields.*.label_name' => 'required_with:products.*.custom_fields|string|max:255',
+                'products.*.custom_fields.*.value' => 'required_with:products.*.custom_fields|string',
+                'products.*.custom_fields.*.field_type' => 'nullable|string|max:50',
+                'products.*.custom_fields.*.sort_order' => 'nullable|integer|min:0',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            $createdProducts = [];
+            $skippedProducts = [];
+            $errors = [];
+
+            DB::beginTransaction();
+
+            try {
+                foreach ($products as $index => $productData) {
+                    try {
+                        // Check if product already exists by SKU
+                        $existingProduct = Product::where('sku', $productData['sku'])->first();
+                        
+                        if ($existingProduct) {
+                            $skippedProducts[] = [
+                                'index' => $index,
+                                'sku' => $productData['sku'],
+                                'name' => $productData['name'] ?? 'Unknown',
+                                'reason' => 'Product with this SKU already exists',
+                                'existing_id' => $existingProduct->id
+                            ];
+                            continue;
+                        }
+
+                        // Generate slug if not provided
+                        if (empty($productData['slug'])) {
+                            $productData['slug'] = \Illuminate\Support\Str::slug($productData['name']);
+                            
+                            // Check if slug already exists (but product doesn't exist by SKU)
+                            $originalSlug = $productData['slug'];
+                            $counter = 1;
+                            while (Product::where('slug', $productData['slug'])->exists()) {
+                                $productData['slug'] = $originalSlug . '-' . $counter;
+                                $counter++;
+                            }
+                        } else {
+                            // If slug is provided, check if it already exists
+                            $existingBySlug = Product::where('slug', $productData['slug'])->first();
+                            if ($existingBySlug) {
+                                $skippedProducts[] = [
+                                    'index' => $index,
+                                    'sku' => $productData['sku'],
+                                    'name' => $productData['name'] ?? 'Unknown',
+                                    'slug' => $productData['slug'],
+                                    'reason' => 'Product with this slug already exists',
+                                    'existing_id' => $existingBySlug->id
+                                ];
+                                continue;
+                            }
+                        }
+
+                        // Convert tags to array if provided
+                        if (isset($productData['tags'])) {
+                            if (is_string($productData['tags'])) {
+                                // Try to decode JSON first (for products.php format)
+                                $decoded = json_decode($productData['tags'], true);
+                                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                                    $productData['tags'] = $decoded;
+                                } else {
+                                    // If not JSON, treat as comma-separated string
+                                    $productData['tags'] = array_map('trim', explode(',', $productData['tags']));
+                                }
+                            } elseif (is_array($productData['tags'])) {
+                                $productData['tags'] = array_map('trim', $productData['tags']);
+                            }
+                        }
+
+                        // Convert images array to media array if images exist
+                        if (isset($productData['images']) && is_array($productData['images'])) {
+                            $mediaArray = [];
+                            foreach ($productData['images'] as $index => $imageUrl) {
+                                $mediaArray[] = [
+                                    'type' => 'image',
+                                    'url' => $imageUrl,
+                                    'alt_text' => $productData['name'] ?? null,
+                                    'title' => $productData['name'] ?? null,
+                                    'is_thumbnail' => $index === 0, // First image is thumbnail
+                                    'sort_order' => $index + 1,
+                                ];
+                            }
+                            $productData['media'] = $mediaArray;
+                            unset($productData['images']); // Remove images key
+                        }
+
+                        // Set created_by and updated_by if authenticated
+                        if (auth()->check()) {
+                            $userId = auth()->id();
+                            if ($userId && User::where('id', $userId)->exists()) {
+                                $productData['created_by'] = $userId;
+                                $productData['updated_by'] = $userId;
+                            }
+                        }
+
+                        // Set default is_active if not provided
+                        if (!isset($productData['is_active'])) {
+                            $productData['is_active'] = true;
+                        }
+
+                        $product = Product::create($productData);
+
+                        // Handle media URLs
+                        if (isset($productData['media']) && is_array($productData['media'])) {
+                            $this->handleMediaUrls($product, $productData['media']);
+                        }
+
+                        // Handle custom fields
+                        if (isset($productData['custom_fields']) && is_array($productData['custom_fields'])) {
+                            $this->handleCustomFields($product, $productData['custom_fields']);
+                        }
+
+                        $createdProducts[] = $product->load(['category', 'media', 'customFields']);
+
+                    } catch (\Exception $e) {
+                        $errors[] = [
+                            'index' => $index,
+                            'name' => $productData['name'] ?? 'Unknown',
+                            'error' => $e->getMessage()
+                        ];
+                    }
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Bulk product insertion completed',
+                    'data' => [
+                        'created_count' => count($createdProducts),
+                        'skipped_count' => count($skippedProducts),
+                        'failed_count' => count($errors),
+                        'total_processed' => count($products),
+                        'products' => $createdProducts,
+                        'skipped' => $skippedProducts,
+                        'errors' => $errors
+                    ]
+                ], 201);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to bulk insert products',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Import products from products.php file
+     */
+    private function importProductsFromFile()
+    {
+        $filePath = base_path('products.php');
+        
+        if (!file_exists($filePath)) {
+            throw new \Exception('products.php file not found at: ' . $filePath);
+        }
+
+        // Read the file content
+        $fileContent = file_get_contents($filePath);
+        
+        // Find the start of $products = [
+        $startPos = strpos($fileContent, '$products');
+        if ($startPos === false) {
+            throw new \Exception('Could not find $products array in file.');
+        }
+        
+        // Find the opening bracket after $products =
+        $bracketPos = strpos($fileContent, '[', $startPos);
+        if ($bracketPos === false) {
+            throw new \Exception('Could not find opening bracket for products array.');
+        }
+        
+        // Extract array content by counting brackets
+        $arrayStart = $bracketPos + 1;
+        $bracketCount = 1;
+        $currentPos = $arrayStart;
+        $arrayEnd = null;
+        
+        while ($bracketCount > 0 && $currentPos < strlen($fileContent)) {
+            $char = $fileContent[$currentPos];
+            
+            if ($char === '[') {
+                $bracketCount++;
+            } elseif ($char === ']') {
+                $bracketCount--;
+                if ($bracketCount === 0) {
+                    $arrayEnd = $currentPos;
+                    break;
+                }
+            }
+            
+            $currentPos++;
+        }
+        
+        if ($arrayEnd === null) {
+            throw new \Exception('Could not find matching closing bracket for products array.');
+        }
+        
+        // Extract the array content (without the brackets)
+        $arrayContent = substr($fileContent, $arrayStart, $arrayEnd - $arrayStart);
+        
+        // Create a temporary PHP file with just the return statement
+        $tempFile = tempnam(sys_get_temp_dir(), 'products_import_');
+        $tempFile .= '.php';
+        
+        // Write the array content to temp file
+        file_put_contents($tempFile, '<?php return [' . $arrayContent . '];');
+        
+        try {
+            // Include the temp file to get the array
+            $products = include $tempFile;
+            
+            if (!is_array($products)) {
+                throw new \Exception('Failed to parse products array from file. Invalid format.');
+            }
+            
+            return $products;
+        } finally {
+            // Clean up temp file
+            if (file_exists($tempFile)) {
+                @unlink($tempFile);
+            }
+        }
     }
 }
