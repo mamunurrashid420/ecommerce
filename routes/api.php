@@ -24,6 +24,10 @@ use App\Http\Controllers\Api\SupportMessageController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\ExportReportController;
 use App\Http\Controllers\Api\LandingPageController;
+use App\Http\Controllers\Dropship\ProductController as DropshipProductController;
+use App\Http\Controllers\Dropship\OrderController as DropshipOrderController;
+use App\Http\Controllers\Dropship\ShopController as DropshipShopController;
+use App\Http\Controllers\Dropship\CategoryController as DropshipCategoryController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -368,5 +372,74 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::apiResource('permissions', PermissionController::class);
             Route::post('permissions/{permission}/toggle-active', [PermissionController::class, 'toggleActive']);
         });
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Dropship API Routes
+|--------------------------------------------------------------------------
+|
+| Routes for dropshipping integration with Taobao, 1688, Tmall platforms
+| Protected by admin authentication
+|
+*/
+Route::middleware(['auth:sanctum', 'admin'])->prefix('dropship')->group(function () {
+
+    // Product Routes
+    Route::prefix('products')->group(function () {
+        // Search products by keyword
+        Route::get('/search', [DropshipProductController::class, 'search']);
+
+        // Search products by image
+        Route::post('/search-by-image', [DropshipProductController::class, 'searchByImage']);
+
+        // Import product to local store
+        Route::post('/import', [DropshipProductController::class, 'import']);
+
+        // Get product details by ID
+        Route::get('/{numIid}', [DropshipProductController::class, 'show']);
+
+        // Get product description/images
+        Route::get('/{numIid}/description', [DropshipProductController::class, 'description']);
+
+        // Get product reviews
+        Route::get('/{numIid}/reviews', [DropshipProductController::class, 'reviews']);
+
+        // Get shipping fee
+        Route::get('/{numIid}/shipping', [DropshipProductController::class, 'shipping']);
+    });
+
+    // Order Sourcing Routes
+    Route::prefix('orders')->group(function () {
+        // Bulk check sourcing availability
+        Route::post('/bulk-source-check', [DropshipOrderController::class, 'bulkSourceCheck']);
+
+        // Get order sourcing details
+        Route::get('/{order}/source', [DropshipOrderController::class, 'source']);
+
+        // Get price comparison for order
+        Route::get('/{order}/price-comparison', [DropshipOrderController::class, 'priceComparison']);
+
+        // Mark order items as sourced
+        Route::post('/{order}/mark-sourced', [DropshipOrderController::class, 'markSourced']);
+    });
+
+    // Shop Routes
+    Route::prefix('shops')->group(function () {
+        // Get shop information
+        Route::get('/{sellerId}', [DropshipShopController::class, 'show']);
+
+        // Get shop products
+        Route::get('/{sellerId}/products', [DropshipShopController::class, 'products']);
+    });
+
+    // Category Routes
+    Route::prefix('categories')->group(function () {
+        // Get category information
+        Route::get('/{catId}', [DropshipCategoryController::class, 'show']);
+
+        // Get category products
+        Route::get('/{catId}/products', [DropshipCategoryController::class, 'products']);
     });
 });
