@@ -38,7 +38,7 @@ class DropshipService
     /**
      * Generic get product method for any platform
      */
-    public function getProduct(string $platform, string $numIid, bool $isPromotion = false, string $lang = 'zh-CN', bool $useCache = true): array
+    public function getProduct(string $platform, string $numIid, bool $isPromotion = false, string $lang = 'en', bool $useCache = true): array
     {
         $cacheKey = "dropship_{$platform}_product_{$numIid}_{$lang}";
 
@@ -51,7 +51,9 @@ class DropshipService
             'item_id' => $numIid,
         ];
 
-        $response = $this->makeRequest($platform, 'item_detail', $params);
+        // Use multi-language endpoint for non-Chinese languages
+        $endpoint = $lang === 'en' ? 'en/item_detail' : 'item_detail';
+        $response = $this->makeRequest($platform, $endpoint, $params);
 
         if ($response['success'] && $useCache) {
             Cache::put($cacheKey, $response, $this->cacheTimeout);
@@ -63,41 +65,49 @@ class DropshipService
     /**
      * Search products by keyword
      */
-    public function searchProducts(string $platform, string $keyword, int $page = 1, int $pageSize = 40, array $options = []): array
+    public function searchProducts(string $platform, string $keyword, int $page = 1, int $pageSize = 20, array $options = []): array
     {
         $params = [
             'apiToken' => $this->apiToken,
             'keyword' => $keyword,
             'page' => $page,
-            'page_size' => $pageSize,
+            'page_size' => min($pageSize, 20), // tmapi.top max is 20
         ];
 
         if (!empty($options['min_price'])) {
-            $params['start_price'] = $options['min_price'];
+            $params['price_start'] = $options['min_price'];
         }
         if (!empty($options['max_price'])) {
-            $params['end_price'] = $options['max_price'];
+            $params['price_end'] = $options['max_price'];
         }
         if (!empty($options['sort'])) {
+            // tmapi.top supports: default, sales, price_up, price_down
             $params['sort'] = $options['sort'];
         }
 
-        return $this->makeRequest($platform, 'item_search', $params);
+        // Use multi-language endpoint - default to English
+        $lang = $options['lang'] ?? 'en';
+        $endpoint = $lang === 'en' ? 'en/search/items' : 'search/items';
+
+        return $this->makeRequest($platform, $endpoint, $params);
     }
 
     /**
      * Search products by image URL
      */
-    public function searchByImage(string $platform, string $imageUrl, int $page = 1, int $pageSize = 40): array
+    public function searchByImage(string $platform, string $imageUrl, int $page = 1, int $pageSize = 20, string $lang = 'en'): array
     {
         $params = [
             'apiToken' => $this->apiToken,
             'img_url' => $imageUrl,
             'page' => $page,
-            'page_size' => $pageSize,
+            'page_size' => min($pageSize, 20), // tmapi.top max is 20
         ];
 
-        return $this->makeRequest($platform, 'image_search', $params);
+        // Use multi-language endpoint for non-Chinese languages
+        $endpoint = $lang === 'en' ? 'en/search/items_by_img' : 'search/items_by_img';
+
+        return $this->makeRequest($platform, $endpoint, $params);
     }
 
     /**
@@ -121,7 +131,7 @@ class DropshipService
             'page_size' => $pageSize,
         ];
 
-        return $this->makeRequest($platform, 'item_review', $params);
+        return $this->makeRequest($platform, 'item_reviews', $params);
     }
 
     /**
@@ -136,7 +146,7 @@ class DropshipService
             'quantity' => $quantity,
         ];
 
-        return $this->makeRequest($platform, 'item_fee', $params);
+        return $this->makeRequest($platform, 'item_shipping_fee', $params);
     }
 
     /**
@@ -149,22 +159,22 @@ class DropshipService
             'seller_id' => $sellerId,
         ];
 
-        return $this->makeRequest($platform, 'shop_info', $params);
+        return $this->makeRequest($platform, 'shop/info', $params);
     }
 
     /**
      * Get shop products list
      */
-    public function getShopProducts(string $platform, string $sellerId, int $page = 1, int $pageSize = 40): array
+    public function getShopProducts(string $platform, string $sellerId, int $page = 1, int $pageSize = 20): array
     {
         $params = [
             'apiToken' => $this->apiToken,
             'seller_id' => $sellerId,
             'page' => $page,
-            'page_size' => $pageSize,
+            'page_size' => min($pageSize, 20),
         ];
 
-        return $this->makeRequest($platform, 'shop_items', $params);
+        return $this->makeRequest($platform, 'shop/items', $params);
     }
 
     /**
@@ -177,22 +187,22 @@ class DropshipService
             'cat_id' => $catId,
         ];
 
-        return $this->makeRequest($platform, 'category_info', $params);
+        return $this->makeRequest($platform, 'category/info', $params);
     }
 
     /**
      * Get category products
      */
-    public function getCategoryProducts(string $platform, string $catId, int $page = 1, int $pageSize = 40): array
+    public function getCategoryProducts(string $platform, string $catId, int $page = 1, int $pageSize = 20): array
     {
         $params = [
             'apiToken' => $this->apiToken,
             'cat_id' => $catId,
             'page' => $page,
-            'page_size' => $pageSize,
+            'page_size' => min($pageSize, 20),
         ];
 
-        return $this->makeRequest($platform, 'category_items', $params);
+        return $this->makeRequest($platform, 'category/items', $params);
     }
 
     /**

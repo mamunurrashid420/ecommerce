@@ -38,8 +38,8 @@ class ProductController extends Controller
             ], 422);
         }
 
-        $platform = $request->input('platform', 'taobao');
-        $lang = $request->input('lang', 'zh-CN');
+        $platform = $request->input('platform', '1688');
+        $lang = $request->input('lang', 'en');  // Default to English
         $isPromotion = $request->boolean('is_promotion', true);
         $useCache = $request->boolean('cache', true);
 
@@ -88,16 +88,16 @@ class ProductController extends Controller
             ], 422);
         }
 
-        $platform = $request->input('platform', 'taobao');
+        $platform = $request->input('platform', '1688');
         $keyword = $request->input('q');
         $page = $request->integer('page', 1);
-        $pageSize = $request->integer('page_size', 40);
+        $pageSize = $request->integer('page_size', 20);
 
         $options = [
             'min_price' => $request->input('min_price'),
             'max_price' => $request->input('max_price'),
             'sort' => $request->input('sort'),
-            'lang' => $request->input('lang', 'zh-CN'),
+            'lang' => $request->input('lang', 'en'),  // Default to English
         ];
 
         $result = $this->dropshipService->searchProducts($platform, $keyword, $page, $pageSize, $options);
@@ -123,7 +123,8 @@ class ProductController extends Controller
             'image_url' => 'required|url',
             'platform' => 'nullable|string|in:taobao,1688,tmall',
             'page' => 'nullable|integer|min:1',
-            'page_size' => 'nullable|integer|min:1|max:100',
+            'page_size' => 'nullable|integer|min:1|max:20',
+            'lang' => 'nullable|string|in:en,zh',
         ]);
 
         if ($validator->fails()) {
@@ -134,12 +135,13 @@ class ProductController extends Controller
             ], 422);
         }
 
-        $platform = $request->input('platform', 'taobao');
+        $platform = $request->input('platform', '1688');
         $imageUrl = $request->input('image_url');
         $page = $request->integer('page', 1);
-        $pageSize = $request->integer('page_size', 40);
+        $pageSize = $request->integer('page_size', 20);
+        $lang = $request->input('lang', 'en');
 
-        $result = $this->dropshipService->searchByImage($platform, $imageUrl, $page, $pageSize);
+        $result = $this->dropshipService->searchByImage($platform, $imageUrl, $page, $pageSize, $lang);
 
         if (!$result['success']) {
             return response()->json($result, 400);
