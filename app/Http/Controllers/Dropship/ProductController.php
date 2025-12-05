@@ -252,16 +252,45 @@ class ProductController extends Controller
     /**
      * Import product to local store
      * POST /api/dropship/products/import
+     *
+     * Accepts either:
+     * 1. num_iid/source_id to fetch from API and import
+     * 2. Full product data (name, description, price, images, variants) to import directly
      */
     public function import(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'num_iid' => 'required|string',
-            'platform' => 'nullable|string|in:taobao,1688,tmall',
-            'category_id' => 'required|exists:categories,id',
-            'markup_percentage' => 'nullable|numeric|min:0|max:500',
-            'is_active' => 'nullable|boolean',
-        ]);
+        // Check if full product data is provided or just source_id/num_iid
+        $hasFullData = $request->has('name') && $request->has('price');
+
+        if ($hasFullData) {
+            // Validate full product data import
+            $validator = Validator::make($request->all(), [
+                'source_id' => 'required|string',
+                'platform' => 'nullable|string|in:taobao,1688,tmall',
+                'name' => 'required|string|max:255',
+                'description' => 'nullable|string',
+                'price' => 'required|numeric|min:0',
+                'cost_price' => 'nullable|numeric|min:0',
+                'category_id' => 'required|exists:categories,id',
+                'images' => 'nullable|array',
+                'images.*' => 'url',
+                'variants' => 'nullable|array',
+                'variants.*.sku_id' => 'required|string',
+                'variants.*.price' => 'required|numeric|min:0',
+                'variants.*.cost' => 'nullable|numeric|min:0',
+                'is_active' => 'nullable|boolean',
+            ]);
+        } else {
+            // Validate source ID import (fetch from API)
+            $validator = Validator::make($request->all(), [
+                'num_iid' => 'required_without:source_id|string',
+                'source_id' => 'required_without:num_iid|string',
+                'platform' => 'nullable|string|in:taobao,1688,tmall',
+                'category_id' => 'required|exists:categories,id',
+                'markup_percentage' => 'nullable|numeric|min:0|max:500',
+                'is_active' => 'nullable|boolean',
+            ]);
+        }
 
         if ($validator->fails()) {
             return response()->json([
@@ -271,49 +300,94 @@ class ProductController extends Controller
             ], 422);
         }
 
-        $platform = $request->input('platform', 'taobao');
-        $numIid = $request->input('num_iid');
+        $platform = $request->input('platform', '1688');
+        $numIid = $request->input('num_iid') ?? $request->input('source_id');
 
-        // Fetch product from dropship API
-        $result = $this->dropshipService->getProduct($platform, $numIid);
+        if ($hasFullData) {
+            // Use provided product data directly
+            $productData = [
+                'name' => $request->input('name'),
+                'description' => $request->input('description', ''),
+                'price' => $request->input('price'),
+                'cost_price' => $request->input('cost_price', 0),
+                'stock_quantity' => 100,  // Default stock
+                'images' => $request->input('images', []),
+                'brand' => null,
+                'weight' => null,
+                'sku' => 'DS-' . $platform . '-' . $numIid,
+                'source_item_id' => $numIid,
+                'source_platform' => $platform,
+                'variants' => $request->input('variants', []),
+            ];
+        } else {
+            // Fetch product from dropship API
+            $result = $this->dropshipService->getProduct($platform, $numIid);
 
-        if (!$result['success']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch product from source',
-                'error' => $result['message'],
-            ], 400);
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to fetch product from source',
+                    'error' => $result['message'],
+                ], 400);
+            }
+
+            // Transform to local format
+            $productData = $this->dropshipService->transformToLocalProduct($result['data']);
+
+            // Apply markup
+            $markupPercentage = $request->input('markup_percentage', 30);
+            $productData['price'] = $productData['price'] * (1 + $markupPercentage / 100);
+            $productData['sku'] = 'DS-' . $platform . '-' . $numIid;
         }
-
-        // Transform to local format
-        $productData = $this->dropshipService->transformToLocalProduct($result['data']);
-
-        // Apply markup
-        $markupPercentage = $request->input('markup_percentage', 30);
-        $productData['price'] = $productData['price'] * (1 + $markupPercentage / 100);
 
         // Set category and status
         $productData['category_id'] = $request->input('category_id');
         $productData['is_active'] = $request->boolean('is_active', true);
 
-        // Generate unique SKU
-        $productData['sku'] = 'DS-' . $platform . '-' . $numIid;
+        // Generate SKU
+        $sku = $productData['sku'] ?? 'DS-' . $platform . '-' . $numIid;
+
+        // Check if product already exists
+        $existingProduct = \App\Models\Product::where('sku', $sku)->first();
+        if ($existingProduct) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Product already imported',
+                'error' => 'A product with SKU "' . $sku . '" already exists',
+                'existing_product' => [
+                    'id' => $existingProduct->id,
+                    'name' => $existingProduct->name,
+                    'sku' => $existingProduct->sku,
+                    'price' => $existingProduct->price,
+                ],
+            ], 409);  // 409 Conflict
+        }
 
         // Create product using existing Product model
         try {
+            // Build tags to store dropship source info (for order sourcing later)
+            $dropshipTags = json_encode([
+                'dropship' => true,
+                'source_platform' => $platform,
+                'source_id' => $numIid,
+                'cost_price' => $productData['cost_price'] ?? 0,
+                'variants' => $productData['variants'] ?? [],
+            ]);
+
             $product = \App\Models\Product::create([
                 'name' => $productData['name'],
                 'slug' => \Illuminate\Support\Str::slug($productData['name']) . '-' . $numIid,
-                'description' => $productData['description'],
+                'description' => $productData['description'] ?? '',
                 'price' => round($productData['price'], 2),
-                'stock_quantity' => $productData['stock_quantity'],
-                'sku' => $productData['sku'],
-                'brand' => $productData['brand'],
-                'weight' => $productData['weight'],
+                'stock_quantity' => $productData['stock_quantity'] ?? 100,
+                'sku' => $sku,
+                'brand' => $productData['brand'] ?? null,
+                'weight' => $productData['weight'] ?? null,
                 'category_id' => $productData['category_id'],
                 'is_active' => $productData['is_active'],
                 'meta_title' => $productData['name'],
-                'meta_description' => substr($productData['description'], 0, 160),
+                'meta_description' => substr($productData['description'] ?? '', 0, 160),
+                'tags' => $dropshipTags,
             ]);
 
             // Add images as media
@@ -345,6 +419,12 @@ class ProductController extends Controller
                 'success' => true,
                 'message' => 'Product imported successfully',
                 'data' => $product->load(['category', 'media']),
+                'dropship_info' => [
+                    'source_platform' => $platform,
+                    'source_id' => $numIid,
+                    'cost_price' => $productData['cost_price'] ?? 0,
+                    'variants_count' => count($productData['variants'] ?? []),
+                ],
             ], 201);
 
         } catch (\Exception $e) {
