@@ -62,7 +62,55 @@ class ProductController extends Controller
 
         return response()->json($responseData);
     }
+    /**
+     * Search products by keyword
+     * GET /api/dropship/products?search=keyword
+     */
+    public function searchProducts(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'search' => 'required|string|max:255',
+            // 'platform' => 'nullable|string|in:taobao,1688,tmall',
+            'page' => 'nullable|integer|min:1',
+            'page_size' => 'nullable|integer|min:1|max:100',
+            'min_price' => 'nullable|numeric|min:0',
+            'max_price' => 'nullable|numeric|min:0',
+            'sort' => 'nullable|string|in:price_asc,price_desc,sale_desc,credit_desc',
+            'lang' => 'nullable|string|max:10',
+        ]);
 
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $platform = '1688'; // $request->input('platform', '1688');
+        $keyword = $request->input('search');
+        $page = $request->integer('page', 1);
+        $pageSize = $request->integer('page_size', 20);
+
+        $options = [
+            'min_price' => $request->input('min_price'),
+            'max_price' => $request->input('max_price'),
+            'sort' => $request->input('sort'),
+            'lang' => $request->input('lang', 'en'),  // Default to English
+        ];
+
+        $result = $this->dropshipService->searchProducts($platform, $keyword, $page, $pageSize, $options);
+
+        if (!$result['success']) {
+            return response()->json($result, 400);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Products searched successfully',
+            'data' => $result['data'],
+        ]);
+    }
     /**
      * Search products by keyword
      * GET /api/dropship/products/search

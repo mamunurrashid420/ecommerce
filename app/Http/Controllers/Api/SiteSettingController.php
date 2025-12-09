@@ -43,6 +43,7 @@ class SiteSettingController extends Controller
                     'meta_description' => $settings->meta_description,
                     'meta_keywords' => $settings->meta_keywords,
                     'currency' => $settings->currency,
+                    'price_margin' => $settings->price_margin,
                     'currency_symbol' => $settings->currency_symbol,
                     'currency_position' => $settings->currency_position,
                     'formatted_currency' => $settings->formatted_currency,
@@ -114,6 +115,7 @@ class SiteSettingController extends Controller
                 'currency_symbol' => 'nullable|string|max:10',
                 'currency_position' => 'nullable|in:before,after',
                 'shipping_cost' => 'nullable|numeric|min:0',
+                'price_margin' => 'nullable|numeric|min:0',
                 'free_shipping_threshold' => 'nullable|numeric|min:0',
                 'tax_rate' => 'nullable|numeric|min:0|max:100',
                 'tax_inclusive' => 'nullable|boolean',
@@ -363,6 +365,7 @@ class SiteSettingController extends Controller
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
                     'meta_keywords' => $settings->meta_keywords,
+                    'price_margin' => $settings->price_margin,
                     'currency' => $settings->currency,
                     'currency_symbol' => $settings->currency_symbol,
                     'currency_position' => $settings->currency_position,
@@ -442,6 +445,7 @@ class SiteSettingController extends Controller
                     'business_hours' => $settings->business_hours_with_defaults,
                     'google_analytics_id' => $settings->google_analytics_id,
                     'facebook_pixel_id' => $settings->facebook_pixel_id,
+                    'price_margin' => $settings->price_margin,
                 ]
             ], 200);
         } catch (\Exception $e) {

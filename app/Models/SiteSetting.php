@@ -29,6 +29,7 @@ class SiteSetting extends Model
         'currency',
         'currency_symbol',
         'currency_position',
+        'price_margin',
         'shipping_cost',
         'free_shipping_threshold',
         'tax_rate',

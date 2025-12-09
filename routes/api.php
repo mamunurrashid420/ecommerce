@@ -35,6 +35,7 @@ use Illuminate\Support\Facades\Route;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
+Route::get('/product-list', [DropshipProductController::class, 'searchProducts']);
 // Customer Authentication (Email/Password)
 Route::prefix('customer')->group(function () {
     Route::post('/register', [CustomerAuthController::class, 'register']);
