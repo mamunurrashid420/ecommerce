@@ -105,11 +105,306 @@ class ProductController extends Controller
             return response()->json($result, 400);
         }
 
+        // Transform response to match chinasource API format
+        $products = $result['data']; // $this->transformProductsForListing($result['data']);
+
         return response()->json([
-            'success' => true,
-            'message' => 'Products searched successfully',
-            'data' => $result['data'],
+            'result' => [
+                'page' => $page,
+                'per_page' => $pageSize,
+                'total_found' => $result['data']['total_results'] ?? count($products),
+                'products' => $products,
+                'keywords' => [],
+                'time' => now()->toIso8601String(),
+            ],
+            'image' => null,
         ]);
+    }
+
+    /**
+     * Get product details by item ID (Public endpoint)
+     * GET /api/product-details/{itemId}
+     */
+    public function productDetails(Request $request, string $itemId): JsonResponse
+    {
+        $lang = $request->input('lang', 'en');
+        $platform = '1688';
+
+        $result = $this->dropshipService->getProduct($platform, $itemId, false, $lang, true);
+
+        if (!$result['success']) {
+            return response()->json([
+                'result' => null,
+                'error' => $result['message'] ?? 'Product not found',
+            ], 400);
+        }
+
+        // Transform to the expected format
+        $product = $this->transformProductDetails($result['data']);
+
+        return response()->json([
+            'result' => [
+                'product' => $product,
+                'time' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Transform API product to detail format
+     */
+    private function transformProductDetails(array $item): array
+    {
+        // Extract images
+        $images = [];
+        if (isset($item['main_imgs']) && is_array($item['main_imgs'])) {
+            foreach ($item['main_imgs'] as $url) {
+                if (is_string($url) && !empty($url)) {
+                    $images[] = $this->normalizeImageUrl($url);
+                }
+            }
+        }
+
+        // Extract price info
+        $regularPrice = 0;
+        $salePrice = null;
+        $priceMin = 0;
+        $priceMax = 0;
+
+        if (isset($item['price_info'])) {
+            $priceInfo = $item['price_info'];
+            $regularPrice = (int) round((float) ($priceInfo['price'] ?? $priceInfo['price_min'] ?? 0) * 100);
+            $priceMin = (int) round((float) ($priceInfo['price_min'] ?? 0) * 100);
+            $priceMax = (int) round((float) ($priceInfo['price_max'] ?? 0) * 100);
+            if (isset($priceInfo['origin_price_min']) && $priceInfo['origin_price_min'] > ($priceInfo['price_min'] ?? 0)) {
+                $salePrice = $regularPrice;
+                $regularPrice = (int) round((float) $priceInfo['origin_price_min'] * 100);
+            }
+        } elseif (isset($item['sku_price_range'])) {
+            $priceRange = $item['sku_price_range'];
+            $priceMin = (int) round((float) ($priceRange[0] ?? 0) * 100);
+            $priceMax = (int) round((float) ($priceRange[1] ?? $priceRange[0] ?? 0) * 100);
+            $regularPrice = $priceMin;
+        }
+
+        // Extract sale count
+        $totalSold = 0;
+        if (isset($item['sale_count'])) {
+            $totalSold = (int) $item['sale_count'];
+        } elseif (isset($item['sale_info']['sale_count'])) {
+            $totalSold = (int) $item['sale_info']['sale_count'];
+        }
+
+        // Extract SKUs/variants
+        $variants = [];
+        if (isset($item['skus']) && is_array($item['skus'])) {
+            foreach ($item['skus'] as $sku) {
+                $variants[] = [
+                    'sku_id' => $sku['skuid'] ?? $sku['sku_id'] ?? '',
+                    'spec_id' => $sku['specid'] ?? '',
+                    'price' => (int) round((float) ($sku['sale_price'] ?? $sku['price'] ?? 0) * 100),
+                    'original_price' => (int) round((float) ($sku['origin_price'] ?? $sku['sale_price'] ?? 0) * 100),
+                    'stock' => (int) ($sku['stock'] ?? 0),
+                    'props_names' => $sku['props_names'] ?? '',
+                ];
+            }
+        }
+
+        // Extract shop info
+        $shopInfo = $item['shop_info'] ?? [];
+
+        // Extract props
+        $props = [];
+        if (isset($item['product_props']) && is_array($item['product_props'])) {
+            foreach ($item['product_props'] as $prop) {
+                if (is_array($prop)) {
+                    foreach ($prop as $key => $value) {
+                        $props[] = ['name' => $key, 'value' => $value];
+                    }
+                }
+            }
+        }
+
+        return [
+            'id' => 'e3pro-' . ($item['item_id'] ?? ''),
+            'item_id' => $item['item_id'] ?? '',
+            'title' => $item['title'] ?? '',
+            'description' => $item['desc'] ?? '',
+            'regular_price' => $regularPrice,
+            'sale_price' => $salePrice,
+            'price_min' => $priceMin,
+            'price_max' => $priceMax,
+            'currency' => $item['currency'] ?? 'CNY',
+            'stock' => (int) ($item['stock'] ?? 0),
+            'is_sold_out' => $item['is_sold_out'] ?? false,
+            'images' => $images,
+            'thumbnail' => [
+                'large' => !empty($images) ? $this->resizeImageUrl($images[0], '600x600') : '',
+                'medium' => !empty($images) ? $this->resizeImageUrl($images[0], '310x310') : '',
+                'small' => !empty($images) ? $this->resizeImageUrl($images[0], '100x100') : '',
+            ],
+            'video_url' => $item['video_url'] ?? null,
+            'variants' => $variants,
+            'props' => $props,
+            'shop' => [
+                'name' => $shopInfo['shop_name'] ?? $shopInfo['seller_nick'] ?? '',
+                'seller_id' => $shopInfo['seller_id'] ?? '',
+                'location' => $shopInfo['location'] ?? '',
+            ],
+            'meta' => [
+                'total_sold' => $totalSold,
+                'category_id' => $item['category_id'] ?? null,
+                'product_url' => $item['product_url'] ?? '',
+            ],
+        ];
+    }
+
+    /**
+     * Transform API products to the listing format matching chinasource API
+     */
+    private function transformProductsForListing(array $data): array
+    {
+        $products = [];
+        $items = $data['items'] ?? $data['products'] ?? $data ?? [];
+
+        foreach ($items as $item) {
+            // Extract main image URL from various possible field names
+            $mainImage = $this->extractMainImage($item);
+
+            // Generate different thumbnail sizes (1688 CDN supports size parameters)
+            $thumbnail = [
+                'large' => $this->resizeImageUrl($mainImage, '600x600'),
+                'medium' => $this->resizeImageUrl($mainImage, '310x310'),
+                'small' => $this->resizeImageUrl($mainImage, '100x100'),
+            ];
+
+            // Extract price - handle both single price and price range
+            $regularPrice = 0;
+            if (isset($item['price'])) {
+                $regularPrice = (int) round((float) $item['price'] * 100); // Convert to cents/smallest unit
+            } elseif (isset($item['sale_price'])) {
+                $regularPrice = (int) round((float) $item['sale_price'] * 100);
+            } elseif (isset($item['price_range'])) {
+                $regularPrice = (int) round((float) ($item['price_range'][0] ?? 0) * 100);
+            }
+
+            // Extract sale price if available
+            $salePrice = null;
+            if (isset($item['original_price']) && isset($item['sale_price']) && $item['original_price'] > $item['sale_price']) {
+                $salePrice = (int) round((float) $item['sale_price'] * 100);
+                $regularPrice = (int) round((float) $item['original_price'] * 100);
+            }
+
+            // Extract total sold count
+            $totalSold = 0;
+            if (isset($item['sale_count'])) {
+                $totalSold = (int) $item['sale_count'];
+            } elseif (isset($item['sold'])) {
+                $totalSold = (int) $item['sold'];
+            } elseif (isset($item['sales'])) {
+                $totalSold = (int) $item['sales'];
+            }
+
+            $products[] = [
+                'id' => 'e3pro-' . ($item['item_id'] ?? $item['num_iid'] ?? uniqid()),
+                'title' => $item['title'] ?? $item['name'] ?? '',
+                'regular_price' => $regularPrice,
+                'sale_price' => $salePrice,
+                'thumbnail' => $thumbnail,
+                'meta' => [
+                    'total_sold' => $totalSold,
+                ],
+            ];
+        }
+
+        return $products;
+    }
+
+    /**
+     * Extract main image URL from item data - handles various API response formats
+     */
+    private function extractMainImage(array $item): string
+    {
+        // Try various possible field names for the image URL
+        $possibleFields = [
+            'pic_url',           // Common in search results
+            'img_url',           // Alternative name
+            'image_url',         // Alternative name
+            'image',             // Simple field name
+            'thumb_url',         // Thumbnail URL
+            'thumbnail',         // Thumbnail
+            'cover',             // Cover image
+            'cover_url',         // Cover URL
+            'product_image',     // Product image
+        ];
+
+        foreach ($possibleFields as $field) {
+            if (isset($item[$field]) && is_string($item[$field]) && !empty($item[$field])) {
+                return $this->normalizeImageUrl($item[$field]);
+            }
+        }
+
+        // Try array fields (first element)
+        $arrayFields = [
+            'main_imgs',         // Array of main images
+            'item_imgs',         // Array of item images
+            'images',            // Array of images
+            'pics',              // Array of pics
+            'product_images',    // Array of product images
+        ];
+
+        foreach ($arrayFields as $field) {
+            if (isset($item[$field]) && is_array($item[$field]) && !empty($item[$field])) {
+                $firstImage = $item[$field][0];
+                if (is_string($firstImage)) {
+                    return $this->normalizeImageUrl($firstImage);
+                } elseif (is_array($firstImage) && isset($firstImage['url'])) {
+                    return $this->normalizeImageUrl($firstImage['url']);
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Normalize image URL - ensure it has proper protocol
+     */
+    private function normalizeImageUrl(string $url): string
+    {
+        if (empty($url)) {
+            return '';
+        }
+
+        // Add https: if URL starts with //
+        if (strpos($url, '//') === 0) {
+            return 'https:' . $url;
+        }
+
+        return $url;
+    }
+
+    /**
+     * Resize image URL for different thumbnail sizes
+     */
+    private function resizeImageUrl(string $url, string $size): string
+    {
+        if (empty($url)) {
+            return '';
+        }
+
+        // If the URL already contains size info, try to replace it
+        // Common pattern for 1688/taobao CDN: replace dimensions in URL
+        if (strpos($url, '.jpg') !== false || strpos($url, '.png') !== false || strpos($url, '.webp') !== false) {
+            // For 1688 CDN URLs, append the size suffix if not present
+            $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
+            if (!empty($extension)) {
+                $urlWithoutExt = preg_replace('/\.' . $extension . '.*$/', '', $url);
+                return $urlWithoutExt . '.' . $size . '.' . $extension;
+            }
+        }
+
+        return $url;
     }
     /**
      * Search products by keyword

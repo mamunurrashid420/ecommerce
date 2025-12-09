@@ -36,6 +36,7 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::get('/product-list', [DropshipProductController::class, 'searchProducts']);
+Route::get('/product-details/{itemId}', [DropshipProductController::class, 'productDetails']);
 // Customer Authentication (Email/Password)
 Route::prefix('customer')->group(function () {
     Route::post('/register', [CustomerAuthController::class, 'register']);
