@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Dropship;
 
 use App\Http\Controllers\Controller;
 use App\Services\DropshipService;
+use App\Models\SiteSetting;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -15,6 +16,33 @@ class ProductController extends Controller
     public function __construct(DropshipService $dropshipService)
     {
         $this->dropshipService = $dropshipService;
+    }
+
+    /**
+     * Convert CNY price to site currency with margin
+     */
+    private function convertPrice(float $cnyPrice): float
+    {
+        $settings = SiteSetting::getInstance();
+        $currencyRate = $settings->currency_rate ?? 1;
+        $priceMargin = $settings->price_margin ?? 0;
+
+        // Convert CNY to target currency
+        $convertedPrice = $cnyPrice * $currencyRate;
+
+        // Apply price margin (percentage)
+        $finalPrice = $convertedPrice * (1 + ($priceMargin / 100));
+
+        return round($finalPrice, 2);
+    }
+
+    /**
+     * Get site currency code
+     */
+    private function getSiteCurrency(): string
+    {
+        $settings = SiteSetting::getInstance();
+        return $settings->currency ?? 'USD';
     }
 
     /**
@@ -106,7 +134,10 @@ class ProductController extends Controller
         }
 
         // Transform response to match chinasource API format
-        $products = $result['data']; // $this->transformProductsForListing($result['data']);
+        $products = $result['data'];
+
+        // Convert prices and currency for all items
+        $products = $this->convertProductListPrices($products);
 
         return response()->json([
             'result' => [
@@ -119,6 +150,56 @@ class ProductController extends Controller
             ],
             'image' => null,
         ]);
+    }
+
+    /**
+     * Convert prices and currency for product list
+     */
+    private function convertProductListPrices(array $productsData): array
+    {
+        $siteCurrency = $this->getSiteCurrency();
+
+        // Handle nested structure
+        if (isset($productsData['items']) && is_array($productsData['items'])) {
+            foreach ($productsData['items'] as &$item) {
+                $item = $this->convertProductItemPrices($item, $siteCurrency);
+            }
+        } elseif (isset($productsData['products']) && is_array($productsData['products'])) {
+            foreach ($productsData['products'] as &$item) {
+                $item = $this->convertProductItemPrices($item, $siteCurrency);
+            }
+        }
+
+        return $productsData;
+    }
+
+    /**
+     * Convert prices for a single product item
+     */
+    private function convertProductItemPrices(array $item, string $siteCurrency): array
+    {
+        // Convert main price
+        if (isset($item['price'])) {
+            $item['price'] = (string) $this->convertPrice((float) $item['price']);
+        }
+
+        // Convert price_info if exists
+        if (isset($item['price_info'])) {
+            if (isset($item['price_info']['price'])) {
+                $item['price_info']['price'] = (string) $this->convertPrice((float) $item['price_info']['price']);
+            }
+            if (isset($item['price_info']['price_min'])) {
+                $item['price_info']['price_min'] = (string) $this->convertPrice((float) $item['price_info']['price_min']);
+            }
+            if (isset($item['price_info']['price_max'])) {
+                $item['price_info']['price_max'] = (string) $this->convertPrice((float) $item['price_info']['price_max']);
+            }
+        }
+
+        // Update currency
+        $item['currency'] = $siteCurrency;
+
+        return $item;
     }
 
     /**
@@ -155,6 +236,8 @@ class ProductController extends Controller
      */
     private function transformProductDetails(array $item): array
     {
+        $siteCurrency = $this->getSiteCurrency();
+
         // Extract images
         $images = [];
         if (isset($item['main_imgs']) && is_array($item['main_imgs'])) {
@@ -165,7 +248,7 @@ class ProductController extends Controller
             }
         }
 
-        // Extract price info
+        // Extract price info (in CNY cents)
         $regularPrice = 0;
         $salePrice = null;
         $priceMin = 0;
@@ -187,6 +270,12 @@ class ProductController extends Controller
             $regularPrice = $priceMin;
         }
 
+        // Convert prices from CNY to site currency
+        $regularPrice = (int) round($this->convertPrice($regularPrice / 100) * 100);
+        $salePrice = $salePrice ? (int) round($this->convertPrice($salePrice / 100) * 100) : null;
+        $priceMin = (int) round($this->convertPrice($priceMin / 100) * 100);
+        $priceMax = (int) round($this->convertPrice($priceMax / 100) * 100);
+
         // Extract sale count
         $totalSold = 0;
         if (isset($item['sale_count'])) {
@@ -199,11 +288,18 @@ class ProductController extends Controller
         $variants = [];
         if (isset($item['skus']) && is_array($item['skus'])) {
             foreach ($item['skus'] as $sku) {
+                $skuPrice = (float) ($sku['sale_price'] ?? $sku['price'] ?? 0);
+                $skuOriginalPrice = (float) ($sku['origin_price'] ?? $sku['sale_price'] ?? 0);
+
+                // Convert variant prices
+                $convertedPrice = (int) round($this->convertPrice($skuPrice) * 100);
+                $convertedOriginalPrice = (int) round($this->convertPrice($skuOriginalPrice) * 100);
+
                 $variants[] = [
                     'sku_id' => $sku['skuid'] ?? $sku['sku_id'] ?? '',
                     'spec_id' => $sku['specid'] ?? '',
-                    'price' => (int) round((float) ($sku['sale_price'] ?? $sku['price'] ?? 0) * 100),
-                    'original_price' => (int) round((float) ($sku['origin_price'] ?? $sku['sale_price'] ?? 0) * 100),
+                    'price' => $convertedPrice,
+                    'original_price' => $convertedOriginalPrice,
                     'stock' => (int) ($sku['stock'] ?? 0),
                     'props_names' => $sku['props_names'] ?? '',
                 ];
@@ -234,7 +330,7 @@ class ProductController extends Controller
             'sale_price' => $salePrice,
             'price_min' => $priceMin,
             'price_max' => $priceMax,
-            'currency' => $item['currency'] ?? 'CNY',
+            'currency' => $siteCurrency,
             'stock' => (int) ($item['stock'] ?? 0),
             'is_sold_out' => $item['is_sold_out'] ?? false,
             'images' => $images,
