@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\SiteSetting;
+use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -415,7 +416,30 @@ class SiteSettingController extends Controller
     {
         try {
             $settings = SiteSetting::getInstance();
-            
+
+            // Get featured categories
+            $featuredCategories = Category::active()
+                ->featured()
+                ->select('id', 'name', 'description', 'slug', 'image_url', 'icon', 'sort_order')
+                ->withCount(['products as active_products_count' => function ($query) {
+                    $query->where('is_active', true);
+                }])
+                ->orderBy('sort_order')
+                ->limit(12)
+                ->get()
+                ->map(function ($category) {
+                    return [
+                        'id' => $category->id,
+                        'name' => $category->name,
+                        'description' => $category->description,
+                        'slug' => $category->slug,
+                        'image_url' => $category->full_image_url,
+                        'icon' => $category->icon,
+                        'sort_order' => $category->sort_order,
+                        'active_products_count' => $category->active_products_count,
+                    ];
+                });
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -450,6 +474,7 @@ class SiteSettingController extends Controller
                     'google_analytics_id' => $settings->google_analytics_id,
                     'facebook_pixel_id' => $settings->facebook_pixel_id,
                     'price_margin' => $settings->price_margin,
+                    'featured_categories' => $featuredCategories,
                 ]
             ], 200);
         } catch (\Exception $e) {
