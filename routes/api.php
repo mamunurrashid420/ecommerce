@@ -37,9 +37,16 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::get('/product-list', [DropshipProductController::class, 'searchProducts']);
 Route::get('/product-details/{itemId}', [DropshipProductController::class, 'productDetails']);
-// Customer Authentication (Email/Password)
+
+// Product search by image API (upload image file)
+Route::post('/product-search-by-image', [DropshipProductController::class, 'searchProductsByImage']);
+
+
+
+// Customer Authentication (Mobile OTP)
 Route::prefix('customer')->group(function () {
-    Route::post('/login', [CustomerAuthController::class, 'login']);
+    Route::post('/login', [CustomerAuthController::class, 'login']); // Send OTP to mobile
+    Route::post('/verify-otp', [CustomerAuthController::class, 'verifyOtp']); // Verify OTP and get token
 });
 
 Route::get('/products', [ProductController::class, 'index']);
@@ -111,7 +118,7 @@ Route::get('/search', [SearchController::class, 'search']);
 Route::middleware('customer')->prefix('customer')->group(function () {
     Route::get('/profile', [CustomerAuthController::class, 'profile']);
     Route::put('/profile', [CustomerAuthController::class, 'updateProfile']);
-    Route::post('/change-password', [CustomerAuthController::class, 'changePassword']);
+    Route::post('/profile-picture', [CustomerAuthController::class, 'updateProfilePicture']);
     Route::post('/logout', [CustomerAuthController::class, 'logout']);
 });
 

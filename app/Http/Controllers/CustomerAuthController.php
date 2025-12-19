@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 use Carbon\Carbon;
@@ -46,45 +47,123 @@ class CustomerAuthController extends Controller
     }
 
     /**
-     * Login customer with email and password
+     * Login customer with mobile number - sends OTP via SMS
      */
     public function login(Request $request)
     {
         $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
+            'mobile' => 'required|string|max:20',
         ]);
 
-        $customer = Customer::where('email', $request->email)->first();
+        // Find or create customer by mobile number
+        $customer = Customer::where('phone', $request->mobile)->first();
 
-        if (!$customer || !Hash::check($request->password, $customer->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+        if (!$customer) {
+            // Create new customer with mobile number
+            // Provide default values for required fields (name, email, password)
+            $customer = Customer::create([
+                'phone' => $request->mobile,
+                'name' => 'Customer', // Default name, can be updated later
+                'email' => 'customer_' . $request->mobile . '@temp.com', // Temporary email
+                'password' => Hash::make(Str::random(32)), // Random password (not used for OTP auth)
+                'role' => 'customer',
             ]);
         }
 
         // Check if customer is banned
         if ($customer->isBanned()) {
             throw ValidationException::withMessages([
-                'email' => ['Your account has been banned.'],
+                'mobile' => ['Your account has been banned.'],
             ]);
         }
 
         // Check if customer is suspended
         if ($customer->isSuspended()) {
             throw ValidationException::withMessages([
-                'email' => ['Your account has been suspended.'],
+                'mobile' => ['Your account has been suspended.'],
             ]);
         }
 
-        // Create a token for the customer
+        // Generate OTP (default: 1234 since no SMS gateway is configured)
+        $defaultOtp = '1234';
+        $otpExpiresAt = Carbon::now()->addMinutes(10); // OTP valid for 10 minutes
+
+        // Update customer's OTP
+        $customer->update([
+            'otp' => $defaultOtp,
+            'otp_expires_at' => $otpExpiresAt,
+        ]);
+
+        // In production, send OTP via SMS gateway here
+        // For now, we return the OTP in the response (remove this in production)
+
+        return response()->json([
+            'message' => 'OTP sent successfully to your mobile number',
+            'otp' => $defaultOtp, // Remove this in production
+            'expires_at' => $otpExpiresAt->toDateTimeString(),
+        ], 200);
+    }
+
+    /**
+     * Verify OTP and return authentication token
+     */
+    public function verifyOtp(Request $request)
+    {
+        $request->validate([
+            'mobile' => 'required|string|max:20',
+            'otp' => 'required|string',
+        ]);
+
+        $customer = Customer::where('phone', $request->mobile)->first();
+
+        if (!$customer) {
+            throw ValidationException::withMessages([
+                'mobile' => ['Customer not found with this mobile number.'],
+            ]);
+        }
+
+        // Verify OTP
+        if ($customer->otp !== $request->otp) {
+            throw ValidationException::withMessages([
+                'otp' => ['Invalid OTP.'],
+            ]);
+        }
+
+        // Check if OTP is expired
+        if ($customer->otp_expires_at && Carbon::now()->gt($customer->otp_expires_at)) {
+            throw ValidationException::withMessages([
+                'otp' => ['OTP has expired. Please request a new one.'],
+            ]);
+        }
+
+        // Check if customer is banned
+        if ($customer->isBanned()) {
+            throw ValidationException::withMessages([
+                'mobile' => ['Your account has been banned.'],
+            ]);
+        }
+
+        // Check if customer is suspended
+        if ($customer->isSuspended()) {
+            throw ValidationException::withMessages([
+                'mobile' => ['Your account has been suspended.'],
+            ]);
+        }
+
+        // Clear OTP after successful verification
+        $customer->update([
+            'otp' => null,
+            'otp_expires_at' => null,
+        ]);
+
+        // Create authentication token
         $token = $customer->createToken('auth-token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login successful',
             'customer' => $customer,
             'token' => $token,
-        ]);
+        ], 200);
     }
 
     /**
@@ -165,41 +244,6 @@ class CustomerAuthController extends Controller
 
         return response()->json([
             'message' => 'Password reset successful. You can now login with your new password.',
-        ], 200);
-    }
-
-    /**
-     * Change password for authenticated customer
-     */
-    public function changePassword(Request $request)
-    {
-        $request->validate([
-            'current_password' => 'required|string',
-            'password' => 'required|string|min:8|confirmed',
-        ]);
-
-        $customer = $request->user();
-
-        if (!$customer || !($customer instanceof Customer)) {
-            return response()->json([
-                'message' => 'Unauthenticated. Customer authentication required.',
-            ], 401);
-        }
-
-        // Verify current password
-        if (!Hash::check($request->current_password, $customer->password)) {
-            throw ValidationException::withMessages([
-                'current_password' => ['The current password is incorrect.'],
-            ]);
-        }
-
-        // Update password
-        $customer->update([
-            'password' => Hash::make($request->password)
-        ]);
-
-        return response()->json([
-            'message' => 'Password changed successfully'
         ], 200);
     }
 
@@ -362,16 +406,69 @@ class CustomerAuthController extends Controller
     }
 
     /**
+     * Update customer profile picture
+     */
+    public function updateProfilePicture(Request $request)
+    {
+        $customer = $request->user();
+
+        if (!$customer || !($customer instanceof Customer)) {
+            return response()->json([
+                'message' => 'Unauthenticated. Customer authentication required.',
+            ], 401);
+        }
+
+        // Validate profile picture
+        $request->validate([
+            'profile_picture' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+        ]);
+
+        try {
+            $profilePictureFile = $request->file('profile_picture');
+
+            // Validate the file is valid
+            if (!$profilePictureFile->isValid()) {
+                throw new \Exception('Invalid file upload: ' . $profilePictureFile->getErrorMessage());
+            }
+
+            // Delete old profile picture if exists
+            if ($customer->profile_picture) {
+                $oldPath = $customer->profile_picture;
+                if (Storage::disk('public')->exists($oldPath)) {
+                    Storage::disk('public')->delete($oldPath);
+                }
+            }
+
+            // Store new profile picture with a unique name
+            $filename = time() . '_' . uniqid() . '.' . $profilePictureFile->getClientOriginalExtension();
+            $path = Storage::disk('public')->putFileAs('profile_pictures', $profilePictureFile, $filename);
+
+            // Update customer profile picture
+            $customer->update(['profile_picture' => $path]);
+
+            return response()->json([
+                'message' => 'Profile picture updated successfully',
+                'data' => $customer->fresh(),
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to upload profile picture',
+                'error' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
      * Logout customer
      */
     public function logout(Request $request)
     {
         $user = $request->user();
-        
+
         if ($user && $user->currentAccessToken()) {
             $user->currentAccessToken()->delete();
         }
-        
+
         return response()->json(['message' => 'Logged out successfully']);
     }
 }
