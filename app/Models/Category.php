@@ -19,7 +19,7 @@ class Category extends Model
         'sort_order' => 'integer',
     ];
 
-    protected $appends = ['full_image_url'];
+    protected $appends = ['full_image_url', 'full_icon_url'];
 
     /**
      * Relationships
@@ -93,6 +93,35 @@ class Category extends Model
 
         // If URL doesn't start with /, add it and prepend app URL
         return config('app.url') . '/' . ltrim($this->image_url, '/');
+    }
+
+    /**
+     * Get full icon URL
+     */
+    public function getFullIconUrlAttribute()
+    {
+        if (empty($this->icon)) {
+            return null;
+        }
+
+        // If icon is a Font Awesome class (old format), return null
+        // This allows frontend to handle Font Awesome icons separately
+        if (str_starts_with($this->icon, 'fa ') || str_starts_with($this->icon, 'fas ') || str_starts_with($this->icon, 'far ') || str_starts_with($this->icon, 'fab ')) {
+            return null;
+        }
+
+        // If URL already starts with http/https, return as is
+        if (str_starts_with($this->icon, 'http://') || str_starts_with($this->icon, 'https://')) {
+            return $this->icon;
+        }
+
+        // If URL starts with /storage, prepend the app URL
+        if (str_starts_with($this->icon, '/storage')) {
+            return config('app.url') . $this->icon;
+        }
+
+        // If URL doesn't start with /, add it and prepend app URL
+        return config('app.url') . '/' . ltrim($this->icon, '/');
     }
 
     /**

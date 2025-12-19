@@ -205,15 +205,13 @@ class CategoryController extends Controller
                 'slug' => 'nullable|string|max:255|unique:categories,slug',
                 'description' => 'nullable|string',
                 'parent_id' => 'nullable|exists:categories,id',
-                'image_url' => 'nullable|url',
-                'icon' => 'nullable|string|max:100',
                 'sort_order' => 'nullable|integer|min:0',
                 'is_active' => 'boolean',
                 'is_featured' => 'boolean',
                 'meta_title' => 'nullable|string|max:255',
                 'meta_description' => 'nullable|string|max:500',
                 'meta_keywords' => 'nullable|string|max:500',
-                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+                'icon' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048', // Icon image upload
             ]);
 
             if ($validator->fails()) {
@@ -226,13 +224,15 @@ class CategoryController extends Controller
 
             DB::beginTransaction();
 
-            $data = $request->except(['image']);
+            $data = $request->except(['icon']);
 
-            // Handle image upload
-            if ($request->hasFile('image')) {
-                $image = $request->file('image');
-                $filename = time() . '_' . $image->getClientOriginalName();
-                $path = $image->storeAs('categories', $filename, 'public');
+            // Handle icon image upload
+            if ($request->hasFile('icon')) {
+                $iconImage = $request->file('icon');
+                $filename = 'icon_' . time() . '_' . uniqid() . '.' . $iconImage->getClientOriginalExtension();
+                $path = $iconImage->storeAs('categories/icons', $filename, 'public');
+                $data['icon'] = Storage::url($path);
+                // Also set image_url for backward compatibility
                 $data['image_url'] = Storage::url($path);
             }
 
@@ -340,15 +340,13 @@ class CategoryController extends Controller
                 'slug' => 'sometimes|string|max:255|unique:categories,slug,' . $category->id,
                 'description' => 'nullable|string',
                 'parent_id' => 'nullable|exists:categories,id',
-                'image_url' => 'nullable|url',
-                'icon' => 'nullable|string|max:100',
                 'sort_order' => 'nullable|integer|min:0',
                 'is_active' => 'boolean',
                 'is_featured' => 'boolean',
                 'meta_title' => 'nullable|string|max:255',
                 'meta_description' => 'nullable|string|max:500',
                 'meta_keywords' => 'nullable|string|max:500',
-                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+                'icon' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048', // Icon image upload
             ]);
 
             if ($validator->fails()) {
@@ -380,21 +378,30 @@ class CategoryController extends Controller
 
             DB::beginTransaction();
 
-            $data = $request->except(['image']);
+            $data = $request->except(['icon']);
 
-            // Handle image upload
-            if ($request->hasFile('image')) {
-                // Delete old image if exists
-                if ($category->image_url && str_contains($category->image_url, '/storage/categories/')) {
+            // Handle icon image upload
+            if ($request->hasFile('icon')) {
+                // Delete old icon image if exists
+                if ($category->icon && str_contains($category->icon, '/storage/categories/icons/')) {
+                    $oldPath = str_replace('/storage/', '', $category->icon);
+                    if (Storage::disk('public')->exists($oldPath)) {
+                        Storage::disk('public')->delete($oldPath);
+                    }
+                }
+                // Also delete old image_url if it's the same as icon
+                elseif ($category->image_url && str_contains($category->image_url, '/storage/categories/')) {
                     $oldPath = str_replace('/storage/', '', $category->image_url);
                     if (Storage::disk('public')->exists($oldPath)) {
                         Storage::disk('public')->delete($oldPath);
                     }
                 }
 
-                $image = $request->file('image');
-                $filename = time() . '_' . $image->getClientOriginalName();
-                $path = $image->storeAs('categories', $filename, 'public');
+                $iconImage = $request->file('icon');
+                $filename = 'icon_' . time() . '_' . uniqid() . '.' . $iconImage->getClientOriginalExtension();
+                $path = $iconImage->storeAs('categories/icons', $filename, 'public');
+                $data['icon'] = Storage::url($path);
+                // Also set image_url for backward compatibility
                 $data['image_url'] = Storage::url($path);
             }
 
