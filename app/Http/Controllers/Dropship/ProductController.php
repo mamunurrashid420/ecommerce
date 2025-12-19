@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Dropship;
 use App\Http\Controllers\Controller;
 use App\Services\DropshipService;
 use App\Models\SiteSetting;
+use App\Helpers\ChineseTranslationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -295,13 +296,17 @@ class ProductController extends Controller
                 $convertedPrice = (int) round($this->convertPrice($skuPrice) * 100);
                 $convertedOriginalPrice = (int) round($this->convertPrice($skuOriginalPrice) * 100);
 
+                // Translate props_names (e.g., "Color:黑色" -> "Color:Black")
+                $propsNames = $sku['props_names'] ?? '';
+                $translatedPropsNames = ChineseTranslationHelper::translatePropsNames($propsNames);
+
                 $variants[] = [
                     'sku_id' => $sku['skuid'] ?? $sku['sku_id'] ?? '',
                     'spec_id' => $sku['specid'] ?? '',
                     'price' => $convertedPrice,
                     'original_price' => $convertedOriginalPrice,
                     'stock' => (int) ($sku['stock'] ?? 0),
-                    'props_names' => $sku['props_names'] ?? '',
+                    'props_names' => $translatedPropsNames,
                 ];
             }
         }
@@ -309,13 +314,16 @@ class ProductController extends Controller
         // Extract shop info
         $shopInfo = $item['shop_info'] ?? [];
 
-        // Extract props
+        // Extract props and translate
         $props = [];
         if (isset($item['product_props']) && is_array($item['product_props'])) {
             foreach ($item['product_props'] as $prop) {
                 if (is_array($prop)) {
                     foreach ($prop as $key => $value) {
-                        $props[] = ['name' => $key, 'value' => $value];
+                        // Translate both property name and value
+                        $translatedName = ChineseTranslationHelper::translate($key);
+                        $translatedValue = is_string($value) ? ChineseTranslationHelper::translate($value) : $value;
+                        $props[] = ['name' => $translatedName, 'value' => $translatedValue];
                     }
                 }
             }
@@ -343,9 +351,9 @@ class ProductController extends Controller
             'variants' => $variants,
             'props' => $props,
             'shop' => [
-                'name' => $shopInfo['shop_name'] ?? $shopInfo['seller_nick'] ?? '',
+                'name' => ChineseTranslationHelper::translate($shopInfo['shop_name'] ?? $shopInfo['seller_nick'] ?? ''),
                 'seller_id' => $shopInfo['seller_id'] ?? '',
-                'location' => $shopInfo['location'] ?? '',
+                'location' => ChineseTranslationHelper::translate($shopInfo['location'] ?? ''),
             ],
             'meta' => [
                 'total_sold' => $totalSold,

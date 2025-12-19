@@ -39,11 +39,9 @@ Route::get('/product-list', [DropshipProductController::class, 'searchProducts']
 Route::get('/product-details/{itemId}', [DropshipProductController::class, 'productDetails']);
 // Customer Authentication (Email/Password)
 Route::prefix('customer')->group(function () {
-    Route::post('/register', [CustomerAuthController::class, 'register']);
     Route::post('/login', [CustomerAuthController::class, 'login']);
-    Route::post('/forgot-password', [CustomerAuthController::class, 'forgotPassword']);
-    Route::post('/reset-password', [CustomerAuthController::class, 'resetPassword']);
 });
+
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
 
