@@ -28,6 +28,8 @@ use App\Http\Controllers\Dropship\ProductController as DropshipProductController
 use App\Http\Controllers\Dropship\OrderController as DropshipOrderController;
 use App\Http\Controllers\Dropship\ShopController as DropshipShopController;
 use App\Http\Controllers\Dropship\CategoryController as DropshipCategoryController;
+use App\Http\Controllers\Api\CartController;
+use App\Http\Controllers\Api\OrderController as ApiOrderController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -116,10 +118,23 @@ Route::get('/search', [SearchController::class, 'search']);
 
 // Customer routes - use customer middleware for Customer model authentication
 Route::middleware('customer')->prefix('customer')->group(function () {
+    // Profile
     Route::get('/profile', [CustomerAuthController::class, 'profile']);
     Route::put('/profile', [CustomerAuthController::class, 'updateProfile']);
     Route::post('/profile-picture', [CustomerAuthController::class, 'updateProfilePicture']);
     Route::post('/logout', [CustomerAuthController::class, 'logout']);
+
+    // Cart
+    Route::get('/cart', [CartController::class, 'index']);
+    Route::post('/cart/add', [CartController::class, 'addItem']);
+    Route::put('/cart/items/{cartItemId}', [CartController::class, 'updateItem']);
+    Route::delete('/cart/items/{cartItemId}', [CartController::class, 'removeItem']);
+    Route::delete('/cart/clear', [CartController::class, 'clearCart']);
+
+    // Orders
+    Route::post('/orders/create', [ApiOrderController::class, 'createFromCart']);
+    Route::get('/orders', [ApiOrderController::class, 'index']);
+    Route::get('/orders/{orderId}', [ApiOrderController::class, 'show']);
 });
 
 // Order routes - allow both customers and admins

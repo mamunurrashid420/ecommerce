@@ -19,6 +19,11 @@ class Order extends Model
         'tax_inclusive',
         'total_amount',
         'status',
+        'payment_method',
+        'payment_status',
+        'transaction_number',
+        'payment_receipt_image',
+        'paid_at',
         'shipping_address',
         'notes',
         'cancellation_requested_at',
@@ -36,9 +41,12 @@ class Order extends Model
         'tax_rate' => 'decimal:2',
         'tax_inclusive' => 'boolean',
         'total_amount' => 'decimal:2',
+        'paid_at' => 'datetime',
         'cancellation_requested_at' => 'datetime',
         'cancelled_at' => 'datetime',
     ];
+
+    protected $appends = ['payment_receipt_url'];
 
     public function customer()
     {
@@ -98,11 +106,34 @@ class Order extends Model
 
     /**
      * Check if order is cancelled
-     * 
+     *
      * @return bool
      */
     public function isCancelled(): bool
     {
         return $this->status === 'cancelled';
+    }
+
+    /**
+     * Get full payment receipt URL
+     */
+    public function getPaymentReceiptUrlAttribute()
+    {
+        if (empty($this->payment_receipt_image)) {
+            return null;
+        }
+
+        // If URL already starts with http/https, return as is
+        if (str_starts_with($this->payment_receipt_image, 'http://') || str_starts_with($this->payment_receipt_image, 'https://')) {
+            return $this->payment_receipt_image;
+        }
+
+        // If URL starts with /storage, prepend the app URL
+        if (str_starts_with($this->payment_receipt_image, '/storage')) {
+            return config('app.url') . $this->payment_receipt_image;
+        }
+
+        // If URL doesn't start with /, add it and prepend app URL
+        return config('app.url') . '/' . ltrim($this->payment_receipt_image, '/');
     }
 }
