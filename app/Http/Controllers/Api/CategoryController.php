@@ -18,10 +18,7 @@ class CategoryController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = Category::with(['parent', 'children', 'creator', 'updater'])
-                ->withCount(['products as active_products_count' => function ($query) {
-                    $query->where('is_active', true);
-                }]);
+            $query = Category::with(['creator', 'updater']);
 
             // Apply filters
             if ($request->has('featured') && $request->featured == 'true') {

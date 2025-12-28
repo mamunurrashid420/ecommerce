@@ -145,7 +145,6 @@ class ProductController extends Controller
             'result' => [
                 'page' => $page,
                 'per_page' => $pageSize,
-                'total_found' => $result['data']['total_results'] ?? count($products),
                 'products' => $products,
                 'keywords' => [],
                 'time' => now()->toIso8601String(),
