@@ -16,12 +16,14 @@ class CartItem extends Model
         'product_sku',
         'quantity',
         'subtotal',
+        'variations',
     ];
 
     protected $casts = [
         'product_price' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'quantity' => 'integer',
+        'variations' => 'array',
     ];
 
     protected $appends = ['product_image_url'];

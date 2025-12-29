@@ -55,6 +55,7 @@ class CartController extends Controller
                             'product_sku' => $item->product_sku,
                             'quantity' => $item->quantity,
                             'subtotal' => $item->subtotal,
+                            'variations' => $item->variations,
                         ];
                     }),
                     'total_items' => $cart->total_items,
@@ -67,6 +68,164 @@ class CartController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve cart',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Add product with variations to cart
+     * POST /api/customer/cart
+     *
+     * Payload:
+     * {
+     *   "product": "product_id",
+     *   "quantity": 6,
+     *   "variations": [
+     *     {"id": "variation_id_1", "quantity": 3},
+     *     {"id": "variation_id_2", "quantity": 3}
+     *   ]
+     * }
+     */
+    public function store(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'product' => 'required|exists:products,id',
+                'quantity' => 'required|integer|min:1',
+                'variations' => 'required|array|min:1',
+                'variations.*.id' => 'required|string',
+                'variations.*.quantity' => 'required|integer|min:1',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Validate that total variation quantities match the main quantity
+            $totalVariationQuantity = array_sum(array_column($request->variations, 'quantity'));
+            if ($totalVariationQuantity !== $request->quantity) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Total variation quantities must match the main quantity',
+                    'errors' => [
+                        'quantity' => ['Total variation quantities (' . $totalVariationQuantity . ') does not match main quantity (' . $request->quantity . ')']
+                    ]
+                ], 422);
+            }
+
+            $customer = auth('sanctum')->user();
+            DB::beginTransaction();
+
+            $product = Product::findOrFail($request->product);
+
+            // Check if product is active
+            if (!$product->is_active) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product is not available'
+                ], 400);
+            }
+
+            // Check stock
+            if ($product->stock_quantity < $request->quantity) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient stock. Available: ' . $product->stock_quantity
+                ], 400);
+            }
+
+            $cart = Cart::firstOrCreate(['customer_id' => $customer->id]);
+            $addedItems = [];
+
+            // Create a cart item for each variation
+            foreach ($request->variations as $variation) {
+                // Check if cart item with this product and variation already exists
+                $cartItem = CartItem::where('cart_id', $cart->id)
+                    ->where('product_id', $product->id)
+                    ->whereJsonContains('variations->id', $variation['id'])
+                    ->first();
+
+                if ($cartItem) {
+                    // Update existing cart item
+                    $newQuantity = $cartItem->quantity + $variation['quantity'];
+                    
+                    if ($product->stock_quantity < $newQuantity) {
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Cannot add more items. Maximum available: ' . $product->stock_quantity
+                        ], 400);
+                    }
+
+                    $cartItem->quantity = $newQuantity;
+                    $cartItem->subtotal = $newQuantity * $cartItem->product_price;
+                    // Update variation quantity in stored JSON
+                    $variations = $cartItem->variations ?? [];
+                    if (isset($variations['id']) && $variations['id'] === $variation['id']) {
+                        $variations['quantity'] = $newQuantity;
+                        $cartItem->variations = $variations;
+                    }
+                    $cartItem->save();
+                } else {
+                    // Create new cart item for this variation
+                    $cartItem = CartItem::create([
+                        'cart_id' => $cart->id,
+                        'product_id' => $product->id,
+                        'product_code' => null,
+                        'product_name' => $product->name,
+                        'product_price' => $product->price,
+                        'product_image' => $product->image_url,
+                        'product_sku' => $product->sku,
+                        'quantity' => $variation['quantity'],
+                        'subtotal' => $variation['quantity'] * $product->price,
+                        'variations' => [
+                            'id' => $variation['id'],
+                            'quantity' => $variation['quantity']
+                        ],
+                    ]);
+                }
+
+                $addedItems[] = [
+                    'id' => $cartItem->id,
+                    'product_id' => $cartItem->product_id,
+                    'product_name' => $cartItem->product_name,
+                    'product_price' => $cartItem->product_price,
+                    'product_image_url' => $cartItem->product_image_url,
+                    'quantity' => $cartItem->quantity,
+                    'subtotal' => $cartItem->subtotal,
+                    'variations' => $cartItem->variations,
+                ];
+            }
+
+            DB::commit();
+
+            // Reload cart with items
+            $cart->load('items');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Items added to cart successfully',
+                'data' => [
+                    'cart_id' => $cart->id,
+                    'items' => $addedItems,
+                    'total_items' => $cart->total_items,
+                    'subtotal' => $cart->total,
+                    'total' => $cart->total,
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to add items to cart',
                 'error' => $e->getMessage()
             ], 500);
         }

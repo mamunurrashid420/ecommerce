@@ -126,6 +126,7 @@ Route::middleware('customer')->prefix('customer')->group(function () {
 
     // Cart
     Route::get('/cart', [CartController::class, 'index']);
+    Route::post('/cart', [CartController::class, 'store']);
     Route::post('/cart/add', [CartController::class, 'addItem']);
     Route::put('/cart/items/{cartItemId}', [CartController::class, 'updateItem']);
     Route::delete('/cart/items/{cartItemId}', [CartController::class, 'removeItem']);
