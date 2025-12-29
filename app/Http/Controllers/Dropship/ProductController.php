@@ -347,7 +347,7 @@ class ProductController extends Controller
      * Get product details by item ID (Public endpoint)
      * GET /api/product-details/{itemId}
      */
-    public function productDetails(Request $request, string $itemId): JsonResponse
+    public function productDetails(Request $request, string $itemId)
     {
         $lang = $request->input('lang', 'en');
         $platform = '1688';
@@ -361,7 +361,7 @@ class ProductController extends Controller
             ], 400);
         }
 
-        // Transform to the expected format
+        // Transform to the expected format and include all original data
         $product = $this->transformProductDetails($result['data']);
 
         return response()->json([
@@ -469,7 +469,8 @@ class ProductController extends Controller
             }
         }
 
-        return [
+        // Build transformed structure
+        $transformed = [
             'id' => 'e3pro-' . ($item['item_id'] ?? ''),
             'item_id' => $item['item_id'] ?? '',
             'title' => $item['title'] ?? '',
@@ -501,6 +502,44 @@ class ProductController extends Controller
                 'product_url' => $item['product_url'] ?? '',
             ],
         ];
+
+        // Add all original fields to ensure no data is missing
+        // This preserves the original API response structure alongside the transformed fields
+        $originalFields = [
+            'product_url',
+            'category_id',
+            'category_name',
+            'root_category_id',
+            'currency',
+            'main_imgs',
+            'detail_url',
+            'offer_unit',
+            'product_props',
+            'sale_count',
+            'price_info',
+            'tiered_price_info',
+            'mixed_batch',
+            'sale_info',
+            'support_drop_shipping',
+            'support_cross_border',
+            'shop_info',
+            'delivery_info',
+            'service_tags',
+            'sku_props',
+            'skus',
+            'promotions',
+            'extra',
+        ];
+
+        // Add original fields (they will override any existing transformed fields with the same name)
+        // This ensures all original data is preserved
+        foreach ($originalFields as $field) {
+            if (isset($item[$field])) {
+                $transformed[$field] = $item[$field];
+            }
+        }
+
+        return $transformed;
     }
 
     /**
