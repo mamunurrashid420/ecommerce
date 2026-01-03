@@ -30,6 +30,8 @@ use App\Http\Controllers\Dropship\ShopController as DropshipShopController;
 use App\Http\Controllers\Dropship\CategoryController as DropshipCategoryController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\OrderController as ApiOrderController;
+use App\Http\Controllers\Api\ShippingRateController;
+use App\Http\Controllers\Api\AdminShippingRateController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -84,6 +86,13 @@ Route::post('/contact', [ContactController::class, 'submitContactForm']);
 
 // Public Coupon routes
 Route::get('/coupons/available', [CouponController::class, 'available']);
+
+// Public Shipping Rate routes (No authentication required)
+Route::prefix('shipping-rates')->group(function () {
+    Route::get('/', [ShippingRateController::class, 'index']);
+    Route::get('/grouped', [ShippingRateController::class, 'grouped']);
+    Route::get('/category/{category}', [ShippingRateController::class, 'byCategory']);
+});
 
 // Public Deal routes (No authentication required)
 Route::prefix('deals')->group(function () {
@@ -335,6 +344,16 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{coupon}', [CouponController::class, 'update']);
             Route::delete('/{coupon}', [CouponController::class, 'destroy']);
             Route::post('/{coupon}/toggle-active', [CouponController::class, 'toggleActive']);
+        });
+        
+        // Admin Shipping Rate Management
+        Route::prefix('admin/shipping-rates')->group(function () {
+            Route::get('/', [AdminShippingRateController::class, 'index']);
+            Route::post('/', [AdminShippingRateController::class, 'store']);
+            Route::get('/{shippingRate}', [AdminShippingRateController::class, 'show']);
+            Route::put('/{shippingRate}', [AdminShippingRateController::class, 'update']);
+            Route::delete('/{shippingRate}', [AdminShippingRateController::class, 'destroy']);
+            Route::post('/{shippingRate}/toggle-active', [AdminShippingRateController::class, 'toggleActive']);
         });
         
         // Admin Deal Management
