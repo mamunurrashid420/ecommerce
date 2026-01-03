@@ -98,9 +98,12 @@ class CustomerAuthController extends Controller
         // For now, we return the OTP in the response (remove this in production)
 
         return response()->json([
+            'success' => true,
             'message' => 'OTP sent successfully to your mobile number',
-            'otp' => $defaultOtp, // Remove this in production
-            'expires_at' => $otpExpiresAt->toDateTimeString(),
+            'data' => [
+                'expires_at' => $otpExpiresAt->toDateTimeString(),
+            ],
+
         ], 200);
     }
 
@@ -160,9 +163,12 @@ class CustomerAuthController extends Controller
         $token = $customer->createToken('auth-token')->plainTextToken;
 
         return response()->json([
+            'success' => true,
             'message' => 'Login successful',
-            'customer' => $customer,
-            'token' => $token,
+            'data' => [
+                'customer' => $customer,
+                'token' => $token,
+            ],
         ], 200);
     }
 

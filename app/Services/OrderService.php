@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderStatusHistory;
 use App\Models\Product;
 use App\Models\Customer;
 use App\Models\User;
@@ -152,6 +153,16 @@ class OrderService
                 'status' => 'pending',
                 'shipping_address' => $data['shipping_address'],
                 'notes' => $data['notes'] ?? null,
+            ]);
+            
+            // Record initial status in history
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'old_status' => null,
+                'new_status' => 'pending',
+                'changed_by_type' => 'customer',
+                'changed_by_id' => $customerId,
+                'notes' => 'Order created',
             ]);
             
             // Create order items and reserve stock
@@ -343,7 +354,7 @@ class OrderService
      */
     public function getOrder(int $orderId, ?int $customerId = null): array
     {
-        $order = Order::with(['customer', 'orderItems.product', 'coupon', 'couponUsage'])->findOrFail($orderId);
+        $order = Order::with(['customer', 'orderItems.product', 'coupon', 'couponUsage', 'statusHistory'])->findOrFail($orderId);
         
         // If customer ID is provided, verify ownership
         if ($customerId !== null && $order->customer_id !== $customerId) {
@@ -361,12 +372,40 @@ class OrderService
      * 
      * @param int $orderId
      * @param string $status
+     * @param string|null $changedByType
+     * @param int|null $changedById
+     * @param string|null $notes
      * @return array
      * @throws Exception
      */
-    public function updateOrderStatus(int $orderId, string $status): array
+    public function updateOrderStatus(int $orderId, string $status, ?string $changedByType = null, ?int $changedById = null, ?string $notes = null): array
     {
-        $validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+        $validStatuses = [
+            'cancelled',
+            'pending_payment',
+            'pending_payment_verification',
+            'partially_paid',
+            'purchasing',
+            'purchase_completed',
+            'shipped_from_supplier',
+            'received_in_china_warehouse',
+            'on_the_way_to_china_airport',
+            'received_in_china_airport',
+            'on_the_way_to_bd_airport',
+            'received_in_bd_airport',
+            'on_the_way_to_bd_warehouse',
+            'received_in_bd_warehouse',
+            'processing_for_delivery',
+            'on_the_way_to_delivery',
+            'completed',
+            'processing_for_refund',
+            'refunded',
+            // Legacy statuses for backward compatibility
+            'pending',
+            'processing',
+            'shipped',
+            'delivered',
+        ];
         
         if (!in_array($status, $validStatuses)) {
             throw new Exception("Invalid status. Must be one of: " . implode(', ', $validStatuses));
@@ -378,11 +417,33 @@ class OrderService
             $order = Order::lockForUpdate()->findOrFail($orderId);
             $oldStatus = $order->status;
             
+            // Skip if status hasn't changed
+            if ($oldStatus === $status) {
+                DB::commit();
+                return [
+                    'success' => true,
+                    'order' => $order->load(['customer', 'orderItems.product', 'statusHistory']),
+                    'old_status' => $oldStatus,
+                    'new_status' => $status,
+                    'message' => 'Status unchanged'
+                ];
+            }
+            
             // Validate status transition
             $this->validateStatusTransition($oldStatus, $status);
             
             $order->status = $status;
             $order->save();
+            
+            // Record status change in history
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'old_status' => $oldStatus,
+                'new_status' => $status,
+                'changed_by_type' => $changedByType ?? 'system',
+                'changed_by_id' => $changedById,
+                'notes' => $notes,
+            ]);
             
             // Handle cancellation - release stock
             if ($status === 'cancelled' && $oldStatus !== 'cancelled') {
@@ -399,7 +460,7 @@ class OrderService
             
             return [
                 'success' => true,
-                'order' => $order->load(['customer', 'orderItems.product']),
+                'order' => $order->load(['customer', 'orderItems.product', 'statusHistory']),
                 'old_status' => $oldStatus,
                 'new_status' => $status,
             ];
@@ -409,6 +470,116 @@ class OrderService
             Log::error('Order status update failed', [
                 'order_id' => $orderId,
                 'status' => $status,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Update order amounts (Admin only)
+     * 
+     * @param int $orderId
+     * @param array $amounts
+     * @return array
+     * @throws Exception
+     */
+    public function updateOrderAmounts(int $orderId, array $amounts): array
+    {
+        DB::beginTransaction();
+        
+        try {
+            $order = Order::lockForUpdate()->findOrFail($orderId);
+            
+            // Validate amounts
+            if (isset($amounts['subtotal']) && (!is_numeric($amounts['subtotal']) || $amounts['subtotal'] < 0)) {
+                throw new Exception('Subtotal must be a non-negative number');
+            }
+            
+            if (isset($amounts['discount_amount']) && (!is_numeric($amounts['discount_amount']) || $amounts['discount_amount'] < 0)) {
+                throw new Exception('Discount amount must be a non-negative number');
+            }
+            
+            if (isset($amounts['shipping_cost']) && (!is_numeric($amounts['shipping_cost']) || $amounts['shipping_cost'] < 0)) {
+                throw new Exception('Shipping cost must be a non-negative number');
+            }
+            
+            if (isset($amounts['tax_amount']) && (!is_numeric($amounts['tax_amount']) || $amounts['tax_amount'] < 0)) {
+                throw new Exception('Tax amount must be a non-negative number');
+            }
+            
+            if (isset($amounts['tax_rate']) && (!is_numeric($amounts['tax_rate']) || $amounts['tax_rate'] < 0)) {
+                throw new Exception('Tax rate must be a non-negative number');
+            }
+            
+            // Update amounts
+            if (isset($amounts['subtotal'])) {
+                $order->subtotal = $amounts['subtotal'];
+            }
+            
+            if (isset($amounts['discount_amount'])) {
+                $order->discount_amount = $amounts['discount_amount'];
+            }
+            
+            if (isset($amounts['shipping_cost'])) {
+                $order->shipping_cost = $amounts['shipping_cost'];
+            }
+            
+            if (isset($amounts['tax_amount'])) {
+                $order->tax_amount = $amounts['tax_amount'];
+            }
+            
+            if (isset($amounts['tax_rate'])) {
+                $order->tax_rate = $amounts['tax_rate'];
+            }
+            
+            if (isset($amounts['tax_inclusive'])) {
+                $order->tax_inclusive = (bool) $amounts['tax_inclusive'];
+            }
+            
+            // Recalculate total amount
+            $subtotal = $order->subtotal ?? 0;
+            $discountAmount = $order->discount_amount ?? 0;
+            $shippingCost = $order->shipping_cost ?? 0;
+            $taxAmount = $order->tax_amount ?? 0;
+            
+            $totalAmount = $subtotal - $discountAmount + $shippingCost;
+            
+            // Add tax if not inclusive
+            if (!$order->tax_inclusive) {
+                $totalAmount += $taxAmount;
+            }
+            
+            $order->total_amount = $totalAmount;
+            
+            // Update payment status to 'paid' if it was 'pending' and set paid_at timestamp
+            if ($order->payment_status === 'pending') {
+                $order->payment_status = 'paid';
+                $order->paid_at = now();
+            }
+            
+            $order->save();
+            
+            DB::commit();
+            
+            Log::info('Order amounts updated', [
+                'order_id' => $orderId,
+                'amounts' => $amounts,
+                'new_total' => $totalAmount,
+                'payment_status_updated' => $order->payment_status === 'paid'
+            ]);
+            
+            return [
+                'success' => true,
+                'message' => 'Order amounts updated successfully',
+                'order' => $order->load(['customer', 'orderItems.product']),
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Order amounts update failed', [
+                'order_id' => $orderId,
+                'amounts' => $amounts,
                 'error' => $e->getMessage()
             ]);
             throw $e;
@@ -521,6 +692,62 @@ class OrderService
     }
 
     /**
+     * Get valid next statuses for a given order status
+     * 
+     * @param string $currentStatus
+     * @return array
+     */
+    public function getValidNextStatuses(string $currentStatus): array
+    {
+        $validTransitions = $this->getStatusTransitions();
+        
+        // Always allow cancellation from any status (except already cancelled)
+        $nextStatuses = $validTransitions[$currentStatus] ?? [];
+        
+        // Add cancelled if not already in the list and current status is not cancelled
+        if ($currentStatus !== 'cancelled' && !in_array('cancelled', $nextStatuses)) {
+            $nextStatuses[] = 'cancelled';
+        }
+        
+        return $nextStatuses;
+    }
+
+    /**
+     * Get all status transitions
+     * 
+     * @return array
+     */
+    private function getStatusTransitions(): array
+    {
+        return [
+            'cancelled' => [],
+            'pending_payment' => ['pending_payment_verification', 'cancelled'],
+            'pending_payment_verification' => ['partially_paid', 'purchasing', 'cancelled'],
+            'partially_paid' => ['pending_payment_verification', 'purchasing', 'cancelled'],
+            'purchasing' => ['purchase_completed', 'cancelled'],
+            'purchase_completed' => ['shipped_from_supplier', 'cancelled'],
+            'shipped_from_supplier' => ['received_in_china_warehouse', 'cancelled'],
+            'received_in_china_warehouse' => ['on_the_way_to_china_airport', 'cancelled'],
+            'on_the_way_to_china_airport' => ['received_in_china_airport', 'cancelled'],
+            'received_in_china_airport' => ['on_the_way_to_bd_airport', 'cancelled'],
+            'on_the_way_to_bd_airport' => ['received_in_bd_airport', 'cancelled'],
+            'received_in_bd_airport' => ['on_the_way_to_bd_warehouse', 'cancelled'],
+            'on_the_way_to_bd_warehouse' => ['received_in_bd_warehouse', 'cancelled'],
+            'received_in_bd_warehouse' => ['processing_for_delivery', 'cancelled'],
+            'processing_for_delivery' => ['on_the_way_to_delivery', 'cancelled'],
+            'on_the_way_to_delivery' => ['completed', 'cancelled'],
+            'completed' => [], // Final state
+            'processing_for_refund' => ['refunded', 'cancelled'],
+            'refunded' => [], // Final state
+            // Legacy statuses for backward compatibility
+            'pending' => ['pending_payment_verification', 'processing', 'cancelled'],
+            'processing' => ['purchasing', 'shipped', 'cancelled'],
+            'shipped' => ['on_the_way_to_delivery', 'delivered', 'cancelled'],
+            'delivered' => ['completed'], // Can transition to completed
+        ];
+    }
+
+    /**
      * Validate status transition
      * 
      * @param string $oldStatus
@@ -530,13 +757,12 @@ class OrderService
      */
     private function validateStatusTransition(string $oldStatus, string $newStatus): void
     {
-        $validTransitions = [
-            'pending' => ['processing', 'cancelled'],
-            'processing' => ['shipped', 'cancelled'],
-            'shipped' => ['delivered', 'cancelled'],
-            'delivered' => [], // Final state
-            'cancelled' => [], // Final state
-        ];
+        $validTransitions = $this->getStatusTransitions();
+        
+        // Allow transition to cancelled from any status (except already cancelled)
+        if ($newStatus === 'cancelled' && $oldStatus !== 'cancelled') {
+            return; // Allow cancellation from any status
+        }
         
         if (!isset($validTransitions[$oldStatus])) {
             throw new Exception("Invalid current status: {$oldStatus}");

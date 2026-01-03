@@ -15,12 +15,14 @@ class OrderItem extends Model
         'product_sku',
         'quantity',
         'price',
-        'total'
+        'total',
+        'variations'
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
         'total' => 'decimal:2',
+        'variations' => 'array',
     ];
 
     public function order()

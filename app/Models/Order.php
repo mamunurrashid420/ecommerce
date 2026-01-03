@@ -14,6 +14,7 @@ class Order extends Model
         'subtotal',
         'discount_amount',
         'shipping_cost',
+        'shipping_method',
         'tax_amount',
         'tax_rate',
         'tax_inclusive',
@@ -71,6 +72,11 @@ class Order extends Model
     public function dealUsages()
     {
         return $this->hasMany(DealUsage::class);
+    }
+
+    public function statusHistory()
+    {
+        return $this->hasMany(OrderStatusHistory::class)->orderBy('created_at', 'desc');
     }
 
     /**

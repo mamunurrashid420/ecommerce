@@ -164,6 +164,86 @@ class OrderController extends Controller
     }
 
     /**
+     * Get valid next statuses for an order
+     * GET /api/orders/{order}/next-statuses
+     * 
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getNextStatuses(Order $order)
+    {
+        try {
+            $nextStatuses = $this->orderService->getValidNextStatuses($order->status);
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'current_status' => $order->status,
+                    'next_statuses' => $nextStatuses,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Get all order status transitions
+     * GET /api/orders/status-transitions
+     * 
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getStatusTransitions()
+    {
+        try {
+            // Get all statuses and their transitions
+            $allStatuses = [
+                'cancelled',
+                'pending_payment',
+                'pending_payment_verification',
+                'partially_paid',
+                'purchasing',
+                'purchase_completed',
+                'shipped_from_supplier',
+                'received_in_china_warehouse',
+                'on_the_way_to_china_airport',
+                'received_in_china_airport',
+                'on_the_way_to_bd_airport',
+                'received_in_bd_airport',
+                'on_the_way_to_bd_warehouse',
+                'received_in_bd_warehouse',
+                'processing_for_delivery',
+                'on_the_way_to_delivery',
+                'completed',
+                'processing_for_refund',
+                'refunded',
+                'pending',
+                'processing',
+                'shipped',
+                'delivered',
+            ];
+            
+            $transitions = [];
+            foreach ($allStatuses as $status) {
+                $transitions[$status] = $this->orderService->getValidNextStatuses($status);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => $transitions
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
      * Update order status (Admin only)
      * 
      * @param Request $request
@@ -174,16 +254,93 @@ class OrderController extends Controller
     {
         try {
             $request->validate([
-                'status' => 'required|in:pending,processing,shipped,delivered,cancelled',
+                'status' => [
+                    'required',
+                    'in:cancelled,pending_payment,pending_payment_verification,partially_paid,purchasing,purchase_completed,shipped_from_supplier,received_in_china_warehouse,on_the_way_to_china_airport,received_in_china_airport,on_the_way_to_bd_airport,received_in_bd_airport,on_the_way_to_bd_warehouse,received_in_bd_warehouse,processing_for_delivery,on_the_way_to_delivery,completed,processing_for_refund,refunded,pending,processing,shipped,delivered'
+                ],
+                'notes' => 'nullable|string|max:1000',
             ]);
 
-            $result = $this->orderService->updateOrderStatus($order->id, $request->status);
+            // Get the authenticated admin user
+            $user = auth()->user();
+            $changedByType = null;
+            $changedById = null;
+            
+            if ($user instanceof \App\Models\User) {
+                $changedByType = 'admin';
+                $changedById = $user->id;
+            }
+
+            $result = $this->orderService->updateOrderStatus(
+                $order->id, 
+                $request->status,
+                $changedByType,
+                $changedById,
+                $request->notes
+            );
 
             return response()->json([
                 'success' => true,
                 'message' => 'Order status updated successfully',
                 'data' => $result['order']
             ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Update order amounts (Admin only)
+     * 
+     * @param Request $request
+     * @param Order $order
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function updateAmounts(Request $request, Order $order)
+    {
+        try {
+            $request->validate([
+                'subtotal' => 'nullable|numeric|min:0',
+                'discount_amount' => 'nullable|numeric|min:0',
+                'shipping_cost' => 'nullable|numeric|min:0',
+                'tax_amount' => 'nullable|numeric|min:0',
+                'tax_rate' => 'nullable|numeric|min:0|max:100',
+                'tax_inclusive' => 'nullable|boolean',
+            ]);
+
+            $amounts = $request->only([
+                'subtotal',
+                'discount_amount',
+                'shipping_cost',
+                'tax_amount',
+                'tax_rate',
+                'tax_inclusive'
+            ]);
+
+            // Remove null values
+            $amounts = array_filter($amounts, function($value) {
+                return $value !== null;
+            });
+
+            if (empty($amounts)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'At least one amount field must be provided'
+                ], 422);
+            }
+
+            $result = $this->orderService->updateOrderAmounts($order->id, $amounts);
+
+            return response()->json($result);
         } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,

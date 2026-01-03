@@ -279,17 +279,21 @@ Route::middleware('auth:sanctum')->group(function () {
         // Specific routes must come before parameterized routes
         Route::get('/orders/stats', [OrderController::class, 'stats']);
         Route::get('/orders/pending-cancellations', [OrderController::class, 'pendingCancellations']);
-        // Exclude 'stats' and 'pending-cancellations' from matching as order ID
-        Route::put('/orders/{order}', [OrderController::class, 'update'])
-            ->where('order', '^(?!stats$|pending-cancellations$).*$');
-        Route::delete('/orders/{order}', [OrderController::class, 'destroy'])
-            ->where('order', '^(?!stats$|pending-cancellations$).*$');
-        
-        // Admin Order Cancellation Routes
+        Route::get('/orders/status-transitions', [OrderController::class, 'getStatusTransitions']);
+        // Routes with additional path segments must come before single parameter routes
+        Route::get('/orders/{order}/next-statuses', [OrderController::class, 'getNextStatuses'])
+            ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
+        Route::put('/orders/{order}/amounts', [OrderController::class, 'updateAmounts'])
+            ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
         Route::post('/orders/{order}/approve-cancellation', [OrderController::class, 'approveCancellation'])
-            ->where('order', '^(?!stats$|pending-cancellations$).*$');
+            ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
         Route::post('/orders/{order}/reject-cancellation', [OrderController::class, 'rejectCancellation'])
-            ->where('order', '^(?!stats$|pending-cancellations$).*$');
+            ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
+        // Exclude 'stats', 'pending-cancellations', and 'status-transitions' from matching as order ID
+        Route::put('/orders/{order}', [OrderController::class, 'update'])
+            ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
+        Route::delete('/orders/{order}', [OrderController::class, 'destroy'])
+            ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
         
         // Admin Contact Management
         Route::prefix('admin')->group(function () {

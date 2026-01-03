@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderStatusHistory;
 use App\Models\SiteSetting;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +27,9 @@ class OrderController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'shipping_address' => 'required|string',
+                'shipping_address' => 'required',
+                'shipping_method' => 'nullable|in:air,ship',
+                'payment_method' => 'nullable|string|max:255',
                 'notes' => 'nullable|string',
                 'transaction_number' => 'nullable|string|max:255',
                 'payment_receipt' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // Max 5MB
@@ -79,6 +82,10 @@ class OrderController extends Controller
 
             DB::beginTransaction();
 
+            // Check if manual payment with transaction number - don't save amounts, let admin update
+            $paymentMethod = $request->payment_method ?? 'manual';
+            $isManualPaymentWithTransaction = ($paymentMethod === 'manual') && !empty($request->transaction_number);
+            
             // Get site settings for shipping and tax
             $settings = SiteSetting::getInstance();
             
@@ -107,6 +114,14 @@ class OrderController extends Controller
             if (!$taxInclusive) {
                 $totalAmount += $taxAmount;
             }
+            
+            // If manual payment with transaction number, set amounts to 0/null for admin to update
+            if ($isManualPaymentWithTransaction) {
+                $subtotal = 0;
+                $shippingCost = 0;
+                $taxAmount = 0;
+                $totalAmount = 0;
+            }
 
             // Handle payment receipt upload
             $paymentReceiptPath = null;
@@ -115,6 +130,17 @@ class OrderController extends Controller
                 $filename = 'receipt_' . time() . '_' . uniqid() . '.' . $receipt->getClientOriginalExtension();
                 $paymentReceiptPath = $receipt->storeAs('payment_receipts', $filename, 'public');
             }
+
+            // Parse shipping address (can be JSON string or array)
+            $shippingAddress = $request->shipping_address;
+            if (is_string($shippingAddress)) {
+                $decoded = json_decode($shippingAddress, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $shippingAddress = $decoded;
+                }
+            }
+            // Store as JSON string in database
+            $shippingAddressJson = is_array($shippingAddress) ? json_encode($shippingAddress) : $shippingAddress;
 
             // Generate unique order number
             $orderNumber = 'ORD-' . strtoupper(uniqid()) . '-' . time();
@@ -126,16 +152,17 @@ class OrderController extends Controller
                 'subtotal' => $subtotal,
                 'discount_amount' => 0,
                 'shipping_cost' => $shippingCost,
+                'shipping_method' => $request->shipping_method ?? 'air',
                 'tax_amount' => $taxAmount,
-                'tax_rate' => $taxRate,
+                'tax_rate' => $isManualPaymentWithTransaction ? 0 : $taxRate,
                 'tax_inclusive' => $taxInclusive,
                 'total_amount' => $totalAmount,
                 'status' => 'pending',
-                'payment_method' => 'manual',
+                'payment_method' => $request->payment_method ?? 'manual',
                 'payment_status' => 'pending',
                 'transaction_number' => $request->transaction_number,
                 'payment_receipt_image' => $paymentReceiptPath ? Storage::url($paymentReceiptPath) : null,
-                'shipping_address' => $request->shipping_address,
+                'shipping_address' => $shippingAddressJson,
                 'notes' => $request->notes,
             ]);
 
@@ -151,6 +178,7 @@ class OrderController extends Controller
                     'quantity' => $cartItem->quantity,
                     'price' => $cartItem->product_price,
                     'total' => $cartItem->subtotal,
+                    'variations' => $cartItem->variations,
                 ]);
 
                 // Update product stock (only for local products)
@@ -163,11 +191,21 @@ class OrderController extends Controller
 
             // Clear cart after order creation
             $cart->items()->delete();
+            
+            // Record initial status in history
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'old_status' => null,
+                'new_status' => 'pending',
+                'changed_by_type' => 'customer',
+                'changed_by_id' => $customer->id,
+                'notes' => 'Order created',
+            ]);
 
             DB::commit();
 
-            // Load order with items
-            $order->load('orderItems.product');
+            // Load order with items and status history
+            $order->load('orderItems.product', 'statusHistory');
 
             return response()->json([
                 'success' => true,
@@ -177,6 +215,7 @@ class OrderController extends Controller
                     'order_number' => $order->order_number,
                     'subtotal' => $order->subtotal,
                     'shipping_cost' => $order->shipping_cost,
+                    'shipping_method' => $order->shipping_method,
                     'tax_amount' => $order->tax_amount,
                     'total_amount' => $order->total_amount,
                     'status' => $order->status,
@@ -184,7 +223,7 @@ class OrderController extends Controller
                     'payment_status' => $order->payment_status,
                     'transaction_number' => $order->transaction_number,
                     'payment_receipt_url' => $order->payment_receipt_url,
-                    'shipping_address' => $order->shipping_address,
+                    'shipping_address' => is_string($order->shipping_address) ? json_decode($order->shipping_address, true) ?? $order->shipping_address : $order->shipping_address,
                     'notes' => $order->notes,
                     'items' => $order->orderItems->map(function ($item) {
                         return [
@@ -196,6 +235,18 @@ class OrderController extends Controller
                             'quantity' => $item->quantity,
                             'price' => $item->price,
                             'total' => $item->total,
+                            'variations' => $item->variations,
+                        ];
+                    }),
+                    'status_history' => $order->statusHistory->map(function ($history) {
+                        return [
+                            'id' => $history->id,
+                            'old_status' => $history->old_status,
+                            'new_status' => $history->new_status,
+                            'changed_by_type' => $history->changed_by_type,
+                            'changed_by_id' => $history->changed_by_id,
+                            'notes' => $history->notes,
+                            'created_at' => $history->created_at,
                         ];
                     }),
                     'created_at' => $order->created_at,
@@ -276,7 +327,7 @@ class OrderController extends Controller
         try {
             $customer = auth('sanctum')->user();
 
-            $order = Order::with('orderItems.product')
+            $order = Order::with('orderItems.product', 'statusHistory')
                 ->where('customer_id', $customer->id)
                 ->findOrFail($orderId);
 
@@ -288,6 +339,7 @@ class OrderController extends Controller
                     'subtotal' => $order->subtotal,
                     'discount_amount' => $order->discount_amount,
                     'shipping_cost' => $order->shipping_cost,
+                    'shipping_method' => $order->shipping_method,
                     'tax_amount' => $order->tax_amount,
                     'tax_rate' => $order->tax_rate,
                     'tax_inclusive' => $order->tax_inclusive,
@@ -298,7 +350,7 @@ class OrderController extends Controller
                     'transaction_number' => $order->transaction_number,
                     'payment_receipt_url' => $order->payment_receipt_url,
                     'paid_at' => $order->paid_at,
-                    'shipping_address' => $order->shipping_address,
+                    'shipping_address' => is_string($order->shipping_address) ? json_decode($order->shipping_address, true) ?? $order->shipping_address : $order->shipping_address,
                     'notes' => $order->notes,
                     'items' => $order->orderItems->map(function ($item) {
                         return [
@@ -310,6 +362,18 @@ class OrderController extends Controller
                             'quantity' => $item->quantity,
                             'price' => $item->price,
                             'total' => $item->total,
+                            'variations' => $item->variations,
+                        ];
+                    }),
+                    'status_history' => $order->statusHistory->map(function ($history) {
+                        return [
+                            'id' => $history->id,
+                            'old_status' => $history->old_status,
+                            'new_status' => $history->new_status,
+                            'changed_by_type' => $history->changed_by_type,
+                            'changed_by_id' => $history->changed_by_id,
+                            'notes' => $history->notes,
+                            'created_at' => $history->created_at,
                         ];
                     }),
                     'created_at' => $order->created_at,
