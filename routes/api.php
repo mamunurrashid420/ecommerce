@@ -39,6 +39,7 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::get('/product-list', [DropshipProductController::class, 'searchProducts']);
 Route::get('/product-details/{itemId}', [DropshipProductController::class, 'productDetails']);
+Route::get('/product-description/{itemId}', [DropshipProductController::class, 'productDescription']);
 
 // Product search by image API (upload image file)
 Route::post('/product-search-by-image', [DropshipProductController::class, 'searchProductsByImage']);

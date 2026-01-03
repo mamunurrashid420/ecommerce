@@ -802,6 +802,33 @@ class ProductController extends Controller
     }
 
     /**
+     * Get product description details
+     * GET /api/product-description/{itemId}
+     * 
+     * Public endpoint to get detailed product description with images
+     */
+    public function productDescription(Request $request, string $itemId): JsonResponse
+    {
+        $platform = $request->input('platform', '1688');
+
+        $result = $this->dropshipService->getProductDescriptionDetails($platform, $itemId);
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Failed to fetch product description',
+                'error' => $result['message'] ?? 'Product description not found',
+            ], 400);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Product description fetched successfully',
+            'data' => $result['data'] ?? $result,
+        ]);
+    }
+
+    /**
      * Get product reviews
      * GET /api/dropship/products/{numIid}/reviews
      */

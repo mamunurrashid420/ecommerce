@@ -146,6 +146,32 @@ class DropshipService
     }
 
     /**
+     * Get product description from item_desc endpoint
+     * This endpoint specifically returns detailed product description with images
+     */
+    public function getProductDescriptionDetails(string $platform, string $numIid): array
+    {
+        $cacheKey = "dropship_{$platform}_product_desc_{$numIid}";
+
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
+
+        $params = [
+            'apiToken' => $this->apiToken,
+            'item_id' => $numIid,
+        ];
+
+        $response = $this->makeRequest($platform, 'item_desc', $params);
+
+        if ($response['success']) {
+            Cache::put($cacheKey, $response, $this->cacheTimeout);
+        }
+
+        return $response;
+    }
+
+    /**
      * Get product reviews
      */
     public function getProductReviews(string $platform, string $numIid, int $page = 1, int $pageSize = 20): array

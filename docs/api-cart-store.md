@@ -266,3 +266,4 @@ Example: Quantity mismatch
 - `DELETE /api/customer/cart/items/{cartItemId}` - Remove item from cart
 - `DELETE /api/customer/cart/clear` - Clear all items from cart
 
+

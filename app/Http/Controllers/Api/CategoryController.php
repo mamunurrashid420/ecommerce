@@ -197,19 +197,41 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         try {
-            $validator = Validator::make($request->all(), [
+            // Check for icon file upload first (handles method spoofing)
+            $hasIconFile = false;
+            $files = $request->files->all();
+            if (isset($files['icon']) && $files['icon']) {
+                $hasIconFile = true;
+            } elseif ($request->hasFile('icon')) {
+                $hasIconFile = true;
+            } elseif (!empty($request->allFiles()) && isset($request->allFiles()['icon'])) {
+                $hasIconFile = true;
+            } elseif ($request->file('icon')) {
+                $hasIconFile = true;
+            }
+
+            // Build validation rules
+            $validationRules = [
                 'name' => 'required|string|max:255',
                 'slug' => 'nullable|string|max:255|unique:categories,slug',
                 'description' => 'nullable|string',
                 'parent_id' => 'nullable|exists:categories,id',
-                'sort_order' => 'nullable|integer|min:0',
-                'is_active' => 'boolean',
-                'is_featured' => 'boolean',
+                'sort_order' => 'nullable|integer|min:0', // Accepts both string and integer
+                'is_active' => 'nullable|boolean',
+                'is_featured' => 'nullable|boolean',
                 'meta_title' => 'nullable|string|max:255',
                 'meta_description' => 'nullable|string|max:500',
                 'meta_keywords' => 'nullable|string|max:500',
-                'icon' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048', // Icon image upload
-            ]);
+            ];
+
+            // Add icon validation only if file is present
+            if ($hasIconFile) {
+                $validationRules['icon'] = 'required|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
+            } else {
+                $validationRules['icon'] = 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
+            }
+
+            $validator = Validator::make($request->all(), $validationRules);
 
             if ($validator->fails()) {
                 return response()->json([
@@ -224,10 +246,42 @@ class CategoryController extends Controller
             $data = $request->except(['icon']);
 
             // Handle icon image upload
-            if ($request->hasFile('icon')) {
-                $iconImage = $request->file('icon');
-                $filename = 'icon_' . time() . '_' . uniqid() . '.' . $iconImage->getClientOriginalExtension();
-                $path = $iconImage->storeAs('categories/icons', $filename, 'public');
+            // Check for file upload - handle method spoofing (PUT via POST with _method)
+            $iconFile = null;
+            $hasIconFile = false;
+            
+            // Method 1: Check Symfony's file bag directly (works with method spoofing)
+            $files = $request->files->all();
+            if (isset($files['icon']) && $files['icon']) {
+                $iconFile = $files['icon'];
+                $hasIconFile = true;
+            }
+            
+            // Method 2: Check Laravel's hasFile() method
+            if (!$hasIconFile && $request->hasFile('icon')) {
+                $iconFile = $request->file('icon');
+                $hasIconFile = true;
+            }
+            
+            // Method 3: Check allFiles() array
+            if (!$hasIconFile) {
+                $allFiles = $request->allFiles();
+                if (!empty($allFiles) && isset($allFiles['icon'])) {
+                    $iconFile = $allFiles['icon'];
+                    $hasIconFile = true;
+                }
+            }
+            
+            // Method 4: Check file() method directly
+            if (!$hasIconFile && $request->file('icon')) {
+                $iconFile = $request->file('icon');
+                $hasIconFile = true;
+            }
+            
+            if ($hasIconFile && $iconFile && $iconFile->isValid()) {
+                $filename = 'icon_' . time() . '_' . uniqid() . '.' . $iconFile->getClientOriginalExtension();
+                // Use Storage facade which works with both Symfony and Laravel UploadedFile
+                $path = Storage::disk('public')->putFileAs('categories/icons', $iconFile, $filename);
                 $data['icon'] = Storage::url($path);
                 // Also set image_url for backward compatibility
                 $data['image_url'] = Storage::url($path);
@@ -332,19 +386,41 @@ class CategoryController extends Controller
     public function update(Request $request, Category $category)
     {
         try {
-            $validator = Validator::make($request->all(), [
+            // Check for icon file upload first (handles method spoofing)
+            $hasIconFile = false;
+            $files = $request->files->all();
+            if (isset($files['icon']) && $files['icon']) {
+                $hasIconFile = true;
+            } elseif ($request->hasFile('icon')) {
+                $hasIconFile = true;
+            } elseif (!empty($request->allFiles()) && isset($request->allFiles()['icon'])) {
+                $hasIconFile = true;
+            } elseif ($request->file('icon')) {
+                $hasIconFile = true;
+            }
+
+            // Build validation rules
+            $validationRules = [
                 'name' => 'sometimes|required|string|max:255',
                 'slug' => 'sometimes|string|max:255|unique:categories,slug,' . $category->id,
                 'description' => 'nullable|string',
                 'parent_id' => 'nullable|exists:categories,id',
-                'sort_order' => 'nullable|integer|min:0',
-                'is_active' => 'boolean',
-                'is_featured' => 'boolean',
+                'sort_order' => 'nullable|integer|min:0', // Accepts both string and integer
+                'is_active' => 'nullable|boolean',
+                'is_featured' => 'nullable|boolean',
                 'meta_title' => 'nullable|string|max:255',
                 'meta_description' => 'nullable|string|max:500',
                 'meta_keywords' => 'nullable|string|max:500',
-                'icon' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048', // Icon image upload
-            ]);
+            ];
+
+            // Add icon validation only if file is present
+            if ($hasIconFile) {
+                $validationRules['icon'] = 'required|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
+            } else {
+                $validationRules['icon'] = 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
+            }
+
+            $validator = Validator::make($request->all(), $validationRules);
 
             if ($validator->fails()) {
                 return response()->json([
@@ -378,25 +454,71 @@ class CategoryController extends Controller
             $data = $request->except(['icon']);
 
             // Handle icon image upload
-            if ($request->hasFile('icon')) {
+            // Check for file upload - handle method spoofing (PUT via POST with _method)
+            $iconFile = null;
+            $hasIconFile = false;
+            
+            // Method 1: Check Symfony's file bag directly (works with method spoofing)
+            $files = $request->files->all();
+            if (isset($files['icon']) && $files['icon']) {
+                $iconFile = $files['icon'];
+                $hasIconFile = true;
+            }
+            
+            // Method 2: Check Laravel's hasFile() method
+            if (!$hasIconFile && $request->hasFile('icon')) {
+                $iconFile = $request->file('icon');
+                $hasIconFile = true;
+            }
+            
+            // Method 3: Check allFiles() array
+            if (!$hasIconFile) {
+                $allFiles = $request->allFiles();
+                if (!empty($allFiles) && isset($allFiles['icon'])) {
+                    $iconFile = $allFiles['icon'];
+                    $hasIconFile = true;
+                }
+            }
+            
+            // Method 4: Check file() method directly
+            if (!$hasIconFile && $request->file('icon')) {
+                $iconFile = $request->file('icon');
+                $hasIconFile = true;
+            }
+            
+            if ($hasIconFile && $iconFile && $iconFile->isValid()) {
                 // Delete old icon image if exists
-                if ($category->icon && str_contains($category->icon, '/storage/categories/icons/')) {
-                    $oldPath = str_replace('/storage/', '', $category->icon);
-                    if (Storage::disk('public')->exists($oldPath)) {
-                        Storage::disk('public')->delete($oldPath);
+                if ($category->icon) {
+                    // Handle both /storage/ and full URL paths
+                    $oldIconPath = $category->icon;
+                    if (str_contains($oldIconPath, '/storage/')) {
+                        $oldPath = str_replace('/storage/', '', $oldIconPath);
+                        if (Storage::disk('public')->exists($oldPath)) {
+                            Storage::disk('public')->delete($oldPath);
+                        }
+                    } elseif (str_contains($oldIconPath, 'categories/icons/')) {
+                        // Extract filename from URL
+                        $filenameFromUrl = basename(parse_url($oldIconPath, PHP_URL_PATH));
+                        $oldPath = 'categories/icons/' . $filenameFromUrl;
+                        if (Storage::disk('public')->exists($oldPath)) {
+                            Storage::disk('public')->delete($oldPath);
+                        }
                     }
                 }
-                // Also delete old image_url if it's the same as icon
-                elseif ($category->image_url && str_contains($category->image_url, '/storage/categories/')) {
-                    $oldPath = str_replace('/storage/', '', $category->image_url);
-                    if (Storage::disk('public')->exists($oldPath)) {
-                        Storage::disk('public')->delete($oldPath);
+                
+                // Also delete old image_url if it's different from icon
+                if ($category->image_url && $category->image_url !== $category->icon) {
+                    if (str_contains($category->image_url, '/storage/')) {
+                        $oldPath = str_replace('/storage/', '', $category->image_url);
+                        if (Storage::disk('public')->exists($oldPath)) {
+                            Storage::disk('public')->delete($oldPath);
+                        }
                     }
                 }
 
-                $iconImage = $request->file('icon');
-                $filename = 'icon_' . time() . '_' . uniqid() . '.' . $iconImage->getClientOriginalExtension();
-                $path = $iconImage->storeAs('categories/icons', $filename, 'public');
+                $filename = 'icon_' . time() . '_' . uniqid() . '.' . $iconFile->getClientOriginalExtension();
+                // Use Storage facade which works with both Symfony and Laravel UploadedFile
+                $path = Storage::disk('public')->putFileAs('categories/icons', $iconFile, $filename);
                 $data['icon'] = Storage::url($path);
                 // Also set image_url for backward compatibility
                 $data['image_url'] = Storage::url($path);
