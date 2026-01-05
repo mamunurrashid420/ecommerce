@@ -81,7 +81,7 @@ class AdminShippingRateController extends Controller
             $validated = $request->validate([
                 'category' => 'required|in:A,B,C',
                 'subcategory' => 'nullable|string|max:255',
-                'description_bn' => 'required|string',
+                'description_bn' => 'nullable|string',
                 'description_en' => 'required|string',
                 'rate_air' => 'required|numeric|min:0',
                 'rate_ship' => 'required|numeric|min:0',
@@ -158,7 +158,7 @@ class AdminShippingRateController extends Controller
             $validated = $request->validate([
                 'category' => 'sometimes|in:A,B,C',
                 'subcategory' => 'nullable|string|max:255',
-                'description_bn' => 'sometimes|string',
+                'description_bn' => 'nullable|string',
                 'description_en' => 'sometimes|string',
                 'rate_air' => 'sometimes|numeric|min:0',
                 'rate_ship' => 'sometimes|numeric|min:0',
