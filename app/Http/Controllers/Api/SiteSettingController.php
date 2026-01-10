@@ -39,6 +39,7 @@ class SiteSettingController extends Controller
                     'footer_logo' => $settings->footer_logo_url,
                     'favicon' => $settings->favicon_url,
                     'slider_images' => $settings->slider_images_urls,
+                    'offer' => $settings->offer_with_url,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -152,6 +153,13 @@ class SiteSettingController extends Controller
                 'return_policy' => 'nullable|string',
                 'shipping_policy' => 'nullable|string',
                 'additional_settings' => 'nullable|array',
+                'offer' => 'nullable|array',
+                'offer.offer_name' => 'nullable|string|max:255',
+                'offer.description' => 'nullable|string',
+                'offer.amount' => 'nullable|numeric|min:0',
+                'offer.promotional_image' => 'nullable|string',
+                'offer.start_date' => 'nullable|date',
+                'offer.end_date' => 'nullable|date|after:offer.start_date',
             ];
 
             // Add conditional validation for logo fields
@@ -172,6 +180,11 @@ class SiteSettingController extends Controller
                 $rules['favicon'] = 'nullable|image|mimes:ico,png|max:1024';
             } elseif ($request->has('favicon') && is_string($request->favicon)) {
                 $rules['favicon'] = 'nullable|string';
+            }
+
+            // Validation for promotional image upload
+            if ($request->hasFile('promotional_image')) {
+                $rules['promotional_image'] = 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
             }
 
             // Validation for slider images
@@ -229,7 +242,7 @@ class SiteSettingController extends Controller
             }
 
             $settings = SiteSetting::getInstance();
-            $data = $request->except(['header_logo', 'footer_logo', 'favicon', 'slider_images']);
+            $data = $request->except(['header_logo', 'footer_logo', 'favicon', 'slider_images', 'promotional_image']);
 
             // Handle file uploads
             if ($request->hasFile('header_logo')) {
@@ -251,6 +264,20 @@ class SiteSettingController extends Controller
                     Storage::delete($settings->favicon);
                 }
                 $data['favicon'] = $request->file('favicon')->store('logos', 'public');
+            }
+
+            // Handle promotional image upload for offer
+            if ($request->hasFile('promotional_image')) {
+                $existingOffer = $settings->offer ?? [];
+                if (isset($existingOffer['promotional_image'])) {
+                    Storage::delete($existingOffer['promotional_image']);
+                }
+                $promotionalImagePath = $request->file('promotional_image')->store('offers', 'public');
+                
+                // Update or create offer data with new promotional image
+                $offerData = $request->input('offer', []);
+                $offerData['promotional_image'] = $promotionalImagePath;
+                $data['offer'] = $offerData;
             }
 
             // Handle slider images uploads
@@ -376,6 +403,7 @@ class SiteSettingController extends Controller
                     'footer_logo' => $settings->footer_logo_url,
                     'favicon' => $settings->favicon_url,
                     'slider_images' => $settings->slider_images_urls,
+                    'offer' => $settings->offer_with_url,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -472,6 +500,7 @@ class SiteSettingController extends Controller
                     'footer_logo' => $settings->footer_logo_url,
                     'favicon' => $settings->favicon_url,
                     'slider_images' => $settings->slider_images_urls,
+                    'offer' => $settings->offer_with_url,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,

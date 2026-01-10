@@ -50,6 +50,11 @@ class Customer extends Authenticatable
         return $this->hasMany(Order::class);
     }
 
+    public function savedProducts()
+    {
+        return $this->hasMany(SavedProduct::class);
+    }
+
     public function isAdmin()
     {
         return $this->role === 'admin';

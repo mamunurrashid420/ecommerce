@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 class ProductController extends Controller
 {
@@ -35,7 +36,66 @@ class ProductController extends Controller
         // Apply price margin (percentage)
         $finalPrice = $convertedPrice * (1 + ($priceMargin / 100));
 
-        return round($finalPrice, 2);
+        // Round up to the nearest whole dollar
+        return ceil($finalPrice);
+    }
+
+    /**
+     * Get current offer details
+     */
+    private function getCurrentOffer(): ?array
+    {
+        $settings = SiteSetting::getInstance();
+        $offer = $settings->offer_with_url;
+        
+        if (!$offer || !isset($offer['start_date']) || !isset($offer['end_date'])) {
+            return null;
+        }
+        
+        // Validate offer amount exists and is greater than 0
+        if (!isset($offer['amount']) || $offer['amount'] <= 0) {
+            return null;
+        }
+        
+        $now = now();
+        $startDate = Carbon::parse($offer['start_date'])->startOfDay();
+        $endDate = Carbon::parse($offer['end_date'])->endOfDay();
+        
+        // Check if offer is currently active
+        if ($now->between($startDate, $endDate)) {
+            return $offer;
+        }
+        
+        return null; // Return null if offer is not active
+    }
+
+    /**
+     * Calculate discount price based on current offer
+     */
+    private function calculateDiscountPrice(float $originalPrice): array
+    {
+        $offer = $this->getCurrentOffer();
+        
+        // Default result with no discount
+        $result = [
+            'discount_percentage' => 0,
+            'discount_price' => $originalPrice,
+        ];
+        
+        // If no active offer, return default (no discount)
+        if (!$offer) {
+            return $result;
+        }
+        
+        // Calculate discount
+        $discountPercentage = (float) $offer['amount'];
+        $discountPrice = $originalPrice * (1 - ($discountPercentage / 100));
+        
+        // Round down to the nearest whole dollar for discount price
+        return [
+            'discount_percentage' => $discountPercentage,
+            'discount_price' => floor($discountPrice),
+        ];
     }
 
     /**
@@ -148,6 +208,7 @@ class ProductController extends Controller
                 'products' => $products,
                 'keywords' => [],
                 'time' => now()->toIso8601String(),
+                '_debug_discount_implementation' => 'v2.0',
             ],
             'image' => null,
         ]);
@@ -300,15 +361,22 @@ class ProductController extends Controller
     {
         $siteCurrency = $this->getSiteCurrency();
 
+        // Add debug information
+        $productsData['_debug_structure'] = array_keys($productsData);
+
         // Handle nested structure
         if (isset($productsData['items']) && is_array($productsData['items'])) {
+            $productsData['_debug_found'] = 'items';
             foreach ($productsData['items'] as &$item) {
                 $item = $this->convertProductItemPrices($item, $siteCurrency);
             }
         } elseif (isset($productsData['products']) && is_array($productsData['products'])) {
+            $productsData['_debug_found'] = 'products';
             foreach ($productsData['products'] as &$item) {
                 $item = $this->convertProductItemPrices($item, $siteCurrency);
             }
+        } else {
+            $productsData['_debug_found'] = 'none';
         }
 
         return $productsData;
@@ -319,21 +387,42 @@ class ProductController extends Controller
      */
     private function convertProductItemPrices(array $item, string $siteCurrency): array
     {
+        // Add debug flag to verify method is being called
+        $item['_debug_discount_processed'] = true;
+        
         // Convert main price
         if (isset($item['price'])) {
-            $item['price'] = (string) $this->convertPrice((float) $item['price']);
+            $originalPrice = $this->convertPrice((float) $item['price']);
+            $discountInfo = $this->calculateDiscountPrice($originalPrice);
+            
+            $item['price'] = number_format($originalPrice, 2, '.', '');
+            $item['discount_percentage'] = $discountInfo['discount_percentage'];
+            $item['discount_price'] = number_format($discountInfo['discount_price'], 2, '.', '');
         }
 
         // Convert price_info if exists
         if (isset($item['price_info'])) {
             if (isset($item['price_info']['price'])) {
-                $item['price_info']['price'] = (string) $this->convertPrice((float) $item['price_info']['price']);
+                $originalPrice = $this->convertPrice((float) $item['price_info']['price']);
+                $discountInfo = $this->calculateDiscountPrice($originalPrice);
+                
+                $item['price_info']['price'] = number_format($originalPrice, 2, '.', '');
+                $item['price_info']['discount_percentage'] = $discountInfo['discount_percentage'];
+                $item['price_info']['discount_price'] = number_format($discountInfo['discount_price'], 2, '.', '');
             }
             if (isset($item['price_info']['price_min'])) {
-                $item['price_info']['price_min'] = (string) $this->convertPrice((float) $item['price_info']['price_min']);
+                $originalPrice = $this->convertPrice((float) $item['price_info']['price_min']);
+                $discountInfo = $this->calculateDiscountPrice($originalPrice);
+                
+                $item['price_info']['price_min'] = number_format($originalPrice, 2, '.', '');
+                $item['price_info']['price_min_discount'] = number_format($discountInfo['discount_price'], 2, '.', '');
             }
             if (isset($item['price_info']['price_max'])) {
-                $item['price_info']['price_max'] = (string) $this->convertPrice((float) $item['price_info']['price_max']);
+                $originalPrice = $this->convertPrice((float) $item['price_info']['price_max']);
+                $discountInfo = $this->calculateDiscountPrice($originalPrice);
+                
+                $item['price_info']['price_max'] = number_format($originalPrice, 2, '.', '');
+                $item['price_info']['price_max_discount'] = number_format($discountInfo['discount_price'], 2, '.', '');
             }
         }
 
@@ -364,6 +453,36 @@ class ProductController extends Controller
         // Transform to the expected format and include all original data
         $product = $this->transformProductDetails($result['data']);
 
+        // Check if product is saved (if user is authenticated)
+        $isSaved = false;
+        $savedProductId = null;
+        
+        // Check authentication using Sanctum (token can be passed as Bearer token or via cookie)
+        if (auth('sanctum')->check()) {
+            $customer = auth('sanctum')->user();
+            // Product ID format in saved_products table is "e3pro-{item_id}"
+            $productId = $product['id'] ?? 'e3pro-' . $itemId;
+            
+            // Also try checking with just item_id in case it was saved with different format
+            $savedProduct = \App\Models\SavedProduct::where('customer_id', $customer->id)
+                ->where(function($query) use ($productId, $itemId) {
+                    $query->where('product_id', $productId)
+                          ->orWhere('product_id', 'e3pro-' . $itemId)
+                          ->orWhere('product_slug', $itemId)
+                          ->orWhere('product_slug', $productId);
+                })
+                ->first();
+            
+            if ($savedProduct) {
+                $isSaved = true;
+                $savedProductId = $savedProduct->id;
+            }
+        }
+
+        // Add saved status to product data
+        $product['is_saved'] = $isSaved;
+        $product['saved_product_id'] = $savedProductId;
+
         return response()->json([
             'result' => [
                 'product' => $product,
@@ -389,33 +508,50 @@ class ProductController extends Controller
             }
         }
 
-        // Extract price info (in CNY cents)
-        $regularPrice = 0;
+        // Extract price info (in CNY decimal format)
+        $regularPrice = 0.0;
         $salePrice = null;
-        $priceMin = 0;
-        $priceMax = 0;
+        $priceMin = 0.0;
+        $priceMax = 0.0;
 
         if (isset($item['price_info'])) {
             $priceInfo = $item['price_info'];
-            $regularPrice = (int) round((float) ($priceInfo['price'] ?? $priceInfo['price_min'] ?? 0) * 100);
-            $priceMin = (int) round((float) ($priceInfo['price_min'] ?? 0) * 100);
-            $priceMax = (int) round((float) ($priceInfo['price_max'] ?? 0) * 100);
+            // Extract prices as floats (API returns decimal prices, not cents)
+            $regularPrice = (float) ($priceInfo['price'] ?? $priceInfo['price_min'] ?? 0);
+            $priceMin = (float) ($priceInfo['price_min'] ?? 0);
+            $priceMax = (float) ($priceInfo['price_max'] ?? 0);
             if (isset($priceInfo['origin_price_min']) && $priceInfo['origin_price_min'] > ($priceInfo['price_min'] ?? 0)) {
                 $salePrice = $regularPrice;
-                $regularPrice = (int) round((float) $priceInfo['origin_price_min'] * 100);
+                $regularPrice = (float) $priceInfo['origin_price_min'];
             }
         } elseif (isset($item['sku_price_range'])) {
             $priceRange = $item['sku_price_range'];
-            $priceMin = (int) round((float) ($priceRange[0] ?? 0) * 100);
-            $priceMax = (int) round((float) ($priceRange[1] ?? $priceRange[0] ?? 0) * 100);
+            $priceMin = (float) ($priceRange[0] ?? 0);
+            $priceMax = (float) ($priceRange[1] ?? $priceRange[0] ?? 0);
             $regularPrice = $priceMin;
         }
 
-        // Convert prices from CNY to site currency
-        $regularPrice = (int) round($this->convertPrice($regularPrice / 100) * 100);
-        $salePrice = $salePrice ? (int) round($this->convertPrice($salePrice / 100) * 100) : null;
-        $priceMin = (int) round($this->convertPrice($priceMin / 100) * 100);
-        $priceMax = (int) round($this->convertPrice($priceMax / 100) * 100);
+        // Convert prices from CNY to site currency (ceil is applied in convertPrice)
+        $regularPriceFloat = $this->convertPrice($regularPrice);
+        $salePriceFloat = $salePrice ? $this->convertPrice($salePrice) : null;
+        $priceMinFloat = $this->convertPrice($priceMin);
+        $priceMaxFloat = $this->convertPrice($priceMax);
+
+        // Calculate discount prices
+        $regularDiscountInfo = $this->calculateDiscountPrice($regularPriceFloat);
+        $priceMinDiscountInfo = $this->calculateDiscountPrice($priceMinFloat);
+        $priceMaxDiscountInfo = $this->calculateDiscountPrice($priceMaxFloat);
+
+        // Format prices as decimal strings with 2 decimal places (already using ceil in convertPrice and calculateDiscountPrice)
+        $regularPrice = number_format($regularPriceFloat, 2, '.', '');
+        $salePrice = $salePriceFloat ? number_format($salePriceFloat, 2, '.', '') : null;
+        $priceMin = number_format($priceMinFloat, 2, '.', '');
+        $priceMax = number_format($priceMaxFloat, 2, '.', '');
+
+        // Discount prices formatted with 2 decimal places
+        $regularDiscountPrice = number_format($regularDiscountInfo['discount_price'], 2, '.', '');
+        $priceMinDiscountPrice = number_format($priceMinDiscountInfo['discount_price'], 2, '.', '');
+        $priceMaxDiscountPrice = number_format($priceMaxDiscountInfo['discount_price'], 2, '.', '');
 
         // Extract sale count
         $totalSold = 0;
@@ -433,8 +569,16 @@ class ProductController extends Controller
                 $skuOriginalPrice = (float) ($sku['origin_price'] ?? $sku['sale_price'] ?? 0);
 
                 // Convert variant prices
-                $convertedPrice = (int) round($this->convertPrice($skuPrice) * 100);
-                $convertedOriginalPrice = (int) round($this->convertPrice($skuOriginalPrice) * 100);
+                $convertedPriceFloat = $this->convertPrice($skuPrice);
+                $convertedOriginalPriceFloat = $this->convertPrice($skuOriginalPrice);
+                
+                // Calculate discount for variant
+                $variantDiscountInfo = $this->calculateDiscountPrice($convertedPriceFloat);
+                
+                // Format prices as decimal strings with 2 decimal places (already using ceil in convertPrice and calculateDiscountPrice)
+                $convertedPrice = number_format($convertedPriceFloat, 2, '.', '');
+                $convertedOriginalPrice = number_format($convertedOriginalPriceFloat, 2, '.', '');
+                $convertedDiscountPrice = number_format($variantDiscountInfo['discount_price'], 2, '.', '');
 
                 // Translate props_names (e.g., "Color:黑色" -> "Color:Black")
                 $propsNames = $sku['props_names'] ?? '';
@@ -445,6 +589,8 @@ class ProductController extends Controller
                     'spec_id' => $sku['specid'] ?? '',
                     'price' => $convertedPrice,
                     'original_price' => $convertedOriginalPrice,
+                    'discount_percentage' => $variantDiscountInfo['discount_percentage'],
+                    'discount_price' => $convertedDiscountPrice,
                     'stock' => (int) ($sku['stock'] ?? 0),
                     'props_names' => $translatedPropsNames,
                 ];
@@ -479,6 +625,10 @@ class ProductController extends Controller
             'sale_price' => $salePrice,
             'price_min' => $priceMin,
             'price_max' => $priceMax,
+            'discount_percentage' => $regularDiscountInfo['discount_percentage'],
+            'discount_price' => $regularDiscountPrice,
+            'discount_price_min' => $priceMinDiscountPrice,
+            'discount_price_max' => $priceMaxDiscountPrice,
             'currency' => $siteCurrency,
             'stock' => (int) ($item['stock'] ?? 0),
             'is_sold_out' => $item['is_sold_out'] ?? false,
@@ -578,6 +728,11 @@ class ProductController extends Controller
                 $regularPrice = (int) round((float) $item['original_price'] * 100);
             }
 
+            // Calculate discount prices
+            $regularPriceFloat = $regularPrice / 100;
+            $discountInfo = $this->calculateDiscountPrice($regularPriceFloat);
+            $discountPrice = (int) round($discountInfo['discount_price'] * 100);
+
             // Extract total sold count
             $totalSold = 0;
             if (isset($item['sale_count'])) {
@@ -593,6 +748,8 @@ class ProductController extends Controller
                 'title' => $item['title'] ?? $item['name'] ?? '',
                 'regular_price' => $regularPrice,
                 'sale_price' => $salePrice,
+                'discount_percentage' => $discountInfo['discount_percentage'],
+                'discount_price' => $discountPrice,
                 'thumbnail' => $thumbnail,
                 'meta' => [
                     'total_sold' => $totalSold,

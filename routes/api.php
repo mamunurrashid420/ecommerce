@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\OrderController as ApiOrderController;
 use App\Http\Controllers\Api\ShippingRateController;
 use App\Http\Controllers\Api\AdminShippingRateController;
+use App\Http\Controllers\Api\SavedProductController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -146,6 +147,13 @@ Route::middleware('customer')->prefix('customer')->group(function () {
     Route::post('/orders/create', [ApiOrderController::class, 'createFromCart']);
     Route::get('/orders', [ApiOrderController::class, 'index']);
     Route::get('/orders/{orderId}', [ApiOrderController::class, 'show']);
+
+    // Saved Products (Wishlist)
+    Route::get('/saved-products', [SavedProductController::class, 'index']);
+    Route::post('/saved-products', [SavedProductController::class, 'store']);
+    Route::post('/saved-products/toggle', [SavedProductController::class, 'toggle']);
+    Route::get('/saved-products/check/{productId}', [SavedProductController::class, 'check']);
+    Route::delete('/saved-products/{id}', [SavedProductController::class, 'destroy']);
 });
 
 // Order routes - allow both customers and admins

@@ -22,6 +22,7 @@ class SiteSetting extends Model
         'footer_logo',
         'favicon',
         'slider_images',
+        'offer',
         'social_links',
         'meta_title',
         'meta_description',
@@ -64,6 +65,7 @@ class SiteSetting extends Model
     protected $casts = [
         'social_links' => 'array',
         'slider_images' => 'array',
+        'offer' => 'array',
         'business_hours' => 'array',
         'payment_methods' => 'array',
         'shipping_methods' => 'array',
@@ -190,6 +192,16 @@ class SiteSetting extends Model
     }
 
     /**
+     * Get offer with full URL for promotional image
+     */
+    protected function offerWithUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->getOfferWithUrl()
+        );
+    }
+
+    /**
      * Helper method to get full URLs for slider images
      */
     private function getSliderImagesUrls()
@@ -225,6 +237,25 @@ class SiteSetting extends Model
                 'hyperlink' => null,
             ];
         }, $this->slider_images);
+    }
+
+    /**
+     * Helper method to get offer with full URL for promotional image
+     */
+    private function getOfferWithUrl()
+    {
+        if (empty($this->offer) || !is_array($this->offer)) {
+            return null;
+        }
+
+        return [
+            'offer_name' => $this->offer['offer_name'] ?? null,
+            'description' => $this->offer['description'] ?? null,
+            'amount' => $this->offer['amount'] ?? null,
+            'promotional_image' => $this->getFullUrl($this->offer['promotional_image'] ?? null),
+            'start_date' => $this->offer['start_date'] ?? null,
+            'end_date' => $this->offer['end_date'] ?? null,
+        ];
     }
 
     /**

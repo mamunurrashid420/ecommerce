@@ -618,3 +618,5 @@ POST /api/admin/shipping-rates/1/toggle-active
 - The toggle-active endpoint provides a convenient way to activate/deactivate rates without sending the full update payload
 
 
+
+
