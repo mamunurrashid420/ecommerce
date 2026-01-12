@@ -240,14 +240,10 @@ class DropshipService
             $params['sort'] = $options['sort'];
         }
 
-        // Add language parameter to request params
-        $lang = $options['lang'] ?? 'en';
-        if ($lang) {
-            $params['lang'] = $lang;
-            $params['language'] = $lang;
-        }
+        // Use shop/items endpoint (en/shop/items doesn't exist, so we'll translate titles separately)
+        $endpoint = 'en/shop/items';
 
-        return $this->makeRequest($platform, 'shop/items', $params);
+        return $this->makeRequest($platform, $endpoint, $params);
     }
 
     /**

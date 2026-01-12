@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
 use App\Models\SiteSetting;
+use App\Helpers\ChineseTranslationHelper;
 use Carbon\Carbon;
 
 class ShopController extends Controller
@@ -109,7 +110,7 @@ class ShopController extends Controller
     /**
      * Convert prices and currency for product list
      */
-    private function convertProductListPrices(array $productsData): array
+    private function convertProductListPrices(array $productsData, string $lang = 'zh'): array
     {
         $siteCurrency = $this->getSiteCurrency();
 
@@ -119,7 +120,7 @@ class ShopController extends Controller
         if (array_is_list($productsData) && !empty($productsData)) {
             foreach ($productsData as &$item) {
                 if (is_array($item)) {
-                    $item = $this->convertProductItemPrices($item, $siteCurrency);
+                    $item = $this->convertProductItemPrices($item, $siteCurrency, $lang);
                 }
             }
             return $productsData;
@@ -127,11 +128,11 @@ class ShopController extends Controller
 
         if (isset($productsData['items']) && is_array($productsData['items'])) {
             foreach ($productsData['items'] as &$item) {
-                $item = $this->convertProductItemPrices($item, $siteCurrency);
+                $item = $this->convertProductItemPrices($item, $siteCurrency, $lang);
             }
         } elseif (isset($productsData['products']) && is_array($productsData['products'])) {
             foreach ($productsData['products'] as &$item) {
-                $item = $this->convertProductItemPrices($item, $siteCurrency);
+                $item = $this->convertProductItemPrices($item, $siteCurrency, $lang);
             }
         }
 
@@ -141,8 +142,15 @@ class ShopController extends Controller
     /**
      * Convert prices for a single product item
      */
-    private function convertProductItemPrices(array $item, string $siteCurrency): array
+    private function convertProductItemPrices(array $item, string $siteCurrency, string $lang = 'zh'): array
     {
+        // Translate title if English is requested
+        // Note: Unlike search/items, shop/items doesn't have an en/ endpoint,
+        // so we use ChineseTranslationHelper for local translation
+        if ($lang === 'en' && isset($item['title']) && !empty($item['title'])) {
+            $item['title'] = ChineseTranslationHelper::translate($item['title']);
+        }
+
         // Convert main price
         if (isset($item['price'])) {
             $originalPrice = $this->convertPrice((float) $item['price']);
@@ -260,8 +268,8 @@ class ShopController extends Controller
         // Transform response variables
         $products = $result['data']; // The raw list or array
 
-        // Convert prices and currency for all items
-        $products = $this->convertProductListPrices($products);
+        // Convert prices and currency for all items, and translate titles if needed
+        $products = $this->convertProductListPrices($products, $lang);
 
         return response()->json([
             'result' => [
