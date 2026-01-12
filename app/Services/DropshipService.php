@@ -241,7 +241,7 @@ class DropshipService
         }
 
         // Use shop/items endpoint (en/shop/items doesn't exist, so we'll translate titles separately)
-        $endpoint = 'en/shop/items';
+        $endpoint = 'shop/items';
 
         return $this->makeRequest($platform, $endpoint, $params);
     }
