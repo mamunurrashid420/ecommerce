@@ -47,6 +47,10 @@ Route::get('/product-description/{itemId}', [DropshipProductController::class, '
 // Product search by image API (upload image file)
 Route::post('/product-search-by-image', [DropshipProductController::class, 'searchProductsByImage']);
 
+// Shop Routes (Public)
+Route::get('/shop/{sellerId}', [DropshipShopController::class, 'show']);
+Route::get('/shop/{sellerId}/products', [DropshipShopController::class, 'products']);
+
 
 
 // Customer Authentication (Mobile OTP)
@@ -169,28 +173,28 @@ Route::middleware('auth.any')->group(function () {
 // Customer-only order routes - use customer middleware
 Route::middleware('customer')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);
-    
+
     // Customer Order Cancellation Routes
     // Exclude 'stats' and 'pending-cancellations' from matching as order ID
     Route::post('/orders/{order}/request-cancellation', [OrderController::class, 'requestCancellation'])
         ->where('order', '^(?!stats$|pending-cancellations$).*$');
-    
+
     // Customer Purchase Management Routes
     Route::prefix('purchase')->group(function () {
         Route::post('/validate', [PurchaseController::class, 'validateItems']);
         Route::post('/summary', [PurchaseController::class, 'getSummary']);
     });
-    
+
     // Customer Coupon Routes
     Route::prefix('coupons')->group(function () {
         Route::post('/validate', [CouponController::class, 'validate']);
     });
-    
+
     // Customer Deal Routes
     Route::prefix('deals')->group(function () {
         Route::post('/validate', [DealController::class, 'validate']);
     });
-    
+
     // Customer Support Ticket Routes
     Route::post('/support-tickets', [SupportTicketController::class, 'store']);
 });
@@ -200,21 +204,21 @@ Route::middleware('auth.any')->group(function () {
     // Exclude 'stats' and 'pending-cancellations' from matching as order ID
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancelOrder'])
         ->where('order', '^(?!stats$|pending-cancellations$).*$');
-    
+
     // Support Ticket routes - accessible to both customers and admins
     // GET /support-tickets - accessible to both customers and admins
     // (customerTickets and index methods handle both cases)
     Route::get('/support-tickets', [SupportTicketController::class, 'customerTickets']);
-    
+
     // Support Ticket Navbar routes - must come before parameterized routes
     Route::get('/support-tickets/navbar/count', [SupportTicketController::class, 'navbarCount']);
     Route::get('/support-tickets/navbar/latest', [SupportTicketController::class, 'navbarLatest']);
-    
+
     // Support Ticket routes - accessible to both customers and admins
     // Exclude 'stats' and 'navbar' from matching as ticket ID
     Route::get('/support-tickets/{ticket}', [SupportTicketController::class, 'show'])
         ->where('ticket', '^(?!stats$|navbar).*$');
-    
+
     // Support Message routes - accessible to both customers and admins
     // Exclude 'stats' and 'navbar' from matching as ticket ID
     Route::get('/support-tickets/{ticket}/messages', [SupportMessageController::class, 'index'])
@@ -228,15 +232,15 @@ Route::middleware('auth.any')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     // Admin/User logout
     Route::post('/logout', [AuthController::class, 'logout']);
-    
+
     // Authenticated Admin User Profile Management
     Route::get('/profile', [AuthController::class, 'profile']);
     Route::put('/profile', [AuthController::class, 'updateProfile']);
     Route::put('/profile/password', [AuthController::class, 'updatePassword']);
-    
+
     // Site Settings (accessible to all authenticated users)
     Route::get('/site-settings', [SiteSettingController::class, 'show']);
-    
+
     // Notifications (accessible to all authenticated users)
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
@@ -249,7 +253,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [NotificationController::class, 'destroy']);
         Route::delete('/', [NotificationController::class, 'deleteAll']);
     });
-    
+
     // Admin only routes
     Route::middleware('admin')->group(function () {
         // Customer Management
@@ -260,20 +264,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/customers/{customer}/unsuspend', [CustomerController::class, 'unsuspend']);
         Route::get('/customers/{customer}/orders', [CustomerController::class, 'orderHistory']);
         Route::get('/customers-search', [CustomerController::class, 'search']);
-        
+
         Route::apiResource('products', ProductController::class)->except(['index', 'show']);
         // Product Management (Admin)
         Route::post('/products', [ProductController::class, 'store']);
         Route::post('/products/bulk', [ProductController::class, 'bulkStore']);
         Route::put('/products/{product}', [ProductController::class, 'update']);
         Route::delete('/products/{product}', [ProductController::class, 'destroy']);
-        
+
         // Product Image Management
         Route::post('/products/{product}/images', [ProductController::class, 'uploadImages']);
         Route::delete('/products/{product}/images/{media}', [ProductController::class, 'removeImage']);
         Route::put('/products/{product}/images/{media}/thumbnail', [ProductController::class, 'setThumbnail']);
         Route::put('/products/{product}/images/{media}', [ProductController::class, 'updateImage']);
-        
+
         // Admin Category Management
         Route::post('/categories', [CategoryController::class, 'store']);
         Route::put('/categories/{category}', [CategoryController::class, 'update']);
@@ -281,7 +285,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/categories/sort-order', [CategoryController::class, 'updateSortOrder']);
         Route::put('/categories/{category}/toggle-featured', [CategoryController::class, 'toggleFeatured']);
         Route::put('/categories/{category}/toggle-active', [CategoryController::class, 'toggleActive']);
-        
+
         // Admin Order Management
         // Note: GET /orders is handled by customerOrders route above (supports both customers and admins)
         // Specific routes must come before parameterized routes
@@ -302,7 +306,7 @@ Route::middleware('auth:sanctum')->group(function () {
             ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
         Route::delete('/orders/{order}', [OrderController::class, 'destroy'])
             ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
-        
+
         // Admin Contact Management
         Route::prefix('admin')->group(function () {
             Route::get('/contacts', [ContactController::class, 'index']);
@@ -311,33 +315,33 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::match(['put', 'patch'], '/contacts/{contact}/status', [ContactController::class, 'updateStatus']);
             Route::delete('/contacts/{contact}', [ContactController::class, 'destroy']);
         });
-        
+
         // Site Settings Management (Admin only - Update)
         Route::post('/site-settings', [SiteSettingController::class, 'createOrUpdate']);
         Route::delete('/site-settings/slider-items', [SiteSettingController::class, 'removeSliderItems']);
-        
+
         // Inventory Management
         Route::prefix('inventory')->group(function () {
             // Get stock levels
             Route::get('/products/{product}', [InventoryController::class, 'getStock']);
             Route::post('/products/bulk', [InventoryController::class, 'getBulkStock']);
             Route::get('/products/{product}/check', [InventoryController::class, 'checkStock']);
-            
+
             // Stock adjustments
             Route::post('/products/{product}/adjust', [InventoryController::class, 'adjustStock']);
             Route::put('/products/{product}/set', [InventoryController::class, 'setStock']);
             Route::post('/products/{product}/reserve', [InventoryController::class, 'reserveStock']);
             Route::post('/products/{product}/release', [InventoryController::class, 'releaseStock']);
             Route::post('/products/bulk-adjust', [InventoryController::class, 'bulkAdjustStock']);
-            
+
             // Stock alerts
             Route::get('/low-stock', [InventoryController::class, 'getLowStock']);
             Route::get('/out-of-stock', [InventoryController::class, 'getOutOfStock']);
-            
+
             // Inventory history
             Route::get('/products/{product}/history', [InventoryController::class, 'getHistory']);
         });
-        
+
         // Admin Product Purchase Management (Supplier Purchases)
         Route::prefix('admin-purchases')->group(function () {
             Route::post('/', [AdminPurchaseController::class, 'recordPurchase']);
@@ -346,7 +350,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/products/{product}/history', [AdminPurchaseController::class, 'getProductPurchaseHistory']);
             Route::get('/stats', [AdminPurchaseController::class, 'getPurchaseStats']);
         });
-        
+
         // Admin Coupon Management
         Route::prefix('coupons')->group(function () {
             Route::get('/', [CouponController::class, 'index']);
@@ -357,7 +361,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{coupon}', [CouponController::class, 'destroy']);
             Route::post('/{coupon}/toggle-active', [CouponController::class, 'toggleActive']);
         });
-        
+
         // Admin Shipping Rate Management
         Route::prefix('admin/shipping-rates')->group(function () {
             Route::get('/', [AdminShippingRateController::class, 'index']);
@@ -367,7 +371,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{shippingRate}', [AdminShippingRateController::class, 'destroy']);
             Route::post('/{shippingRate}/toggle-active', [AdminShippingRateController::class, 'toggleActive']);
         });
-        
+
         // Admin Deal Management
         Route::prefix('admin/deals')->group(function () {
             Route::get('/', [AdminDealController::class, 'index']);
@@ -379,7 +383,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{deal}/toggle-active', [AdminDealController::class, 'toggleActive']);
             Route::post('/{deal}/toggle-featured', [AdminDealController::class, 'toggleFeatured']);
         });
-        
+
         // Admin Support Ticket Management
         Route::prefix('support-tickets')->group(function () {
             // Note: GET /support-tickets is handled by customerTickets route above (supports both customers and admins)
@@ -389,7 +393,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{ticket}/assign', [SupportTicketController::class, 'assign']);
             Route::delete('/{ticket}', [SupportTicketController::class, 'destroy']);
         });
-        
+
         // Admin Dashboard Routes
         Route::prefix('dashboard')->group(function () {
             Route::get('/stats', [AdminDashboardController::class, 'stats']);
@@ -400,7 +404,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/low-stock-alerts', [AdminDashboardController::class, 'lowStockAlerts']);
             Route::get('/category-sales', [AdminDashboardController::class, 'categorySales']);
         });
-        
+
         // Export Report Routes
         Route::prefix('exports')->group(function () {
             Route::get('/orders', [ExportReportController::class, 'exportOrders']);
@@ -409,7 +413,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/sales-report', [ExportReportController::class, 'exportSalesReport']);
             Route::get('/product-sales-report', [ExportReportController::class, 'exportProductSalesReport']);
         });
-        
+
         // Roles & Permissions Management (Admin only - requires roles.manage permission)
         Route::middleware('permission:roles.manage')->group(function () {
             // Roles Management
@@ -419,7 +423,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('roles/{role}/permissions', [RoleController::class, 'permissions']);
             Route::get('roles/{role}/users', [RoleController::class, 'users']);
             Route::post('roles/{role}/toggle-active', [RoleController::class, 'toggleActive']);
-            
+
             // Permissions Management
             // Specific routes must come before apiResource to avoid route conflicts
             Route::get('permissions/grouped', [PermissionController::class, 'grouped']);

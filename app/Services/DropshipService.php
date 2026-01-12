@@ -204,12 +204,17 @@ class DropshipService
     /**
      * Get shop information
      */
-    public function getShopInfo(string $platform, string $sellerId): array
+    public function getShopInfo(string $platform, string $sellerId, string $lang = 'en'): array
     {
         $params = [
             'apiToken' => $this->apiToken,
-            'seller_id' => $sellerId,
         ];
+
+        if ($platform === '1688') {
+            $params['member_id'] = $sellerId;
+        } else {
+            $params['seller_id'] = $sellerId;
+        }
 
         return $this->makeRequest($platform, 'shop/info', $params);
     }
@@ -217,14 +222,30 @@ class DropshipService
     /**
      * Get shop products list
      */
-    public function getShopProducts(string $platform, string $sellerId, int $page = 1, int $pageSize = 20): array
+    public function getShopProducts(string $platform, string $sellerId, int $page = 1, int $pageSize = 20, array $options = []): array
     {
         $params = [
             'apiToken' => $this->apiToken,
-            'seller_id' => $sellerId,
             'page' => $page,
             'page_size' => min($pageSize, 20),
         ];
+
+        if ($platform === '1688') {
+            $params['member_id'] = $sellerId;
+        } else {
+            $params['seller_id'] = $sellerId;
+        }
+
+        if (!empty($options['sort'])) {
+            $params['sort'] = $options['sort'];
+        }
+
+        // Add language parameter to request params
+        $lang = $options['lang'] ?? 'en';
+        if ($lang) {
+            $params['lang'] = $lang;
+            $params['language'] = $lang;
+        }
 
         return $this->makeRequest($platform, 'shop/items', $params);
     }
