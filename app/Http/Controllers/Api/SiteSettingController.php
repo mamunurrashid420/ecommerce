@@ -527,6 +527,10 @@ class SiteSettingController extends Controller
                     'google_analytics_id' => $settings->google_analytics_id,
                     'facebook_pixel_id' => $settings->facebook_pixel_id,
                     'price_margin' => $settings->price_margin,
+                    'terms_of_service' => $settings->terms_of_service,
+                    'privacy_policy' => $settings->privacy_policy,
+                    'shipping_policy' => $settings->shipping_policy,
+                    'return_policy' => $settings->return_policy,
                     'featured_categories' => $featuredCategories,
                 ]
             ], 200);

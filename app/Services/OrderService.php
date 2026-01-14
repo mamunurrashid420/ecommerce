@@ -445,16 +445,8 @@ class OrderService
                 'notes' => $notes,
             ]);
             
-            // Handle cancellation - release stock
-            if ($status === 'cancelled' && $oldStatus !== 'cancelled') {
-                foreach ($order->orderItems as $item) {
-                    $this->inventoryService->releaseStock(
-                        $item->product_id,
-                        $item->quantity,
-                        $order->id
-                    );
-                }
-            }
+            // Handle cancellation - stock release removed
+            // No need to release stock on cancellation
             
             DB::commit();
             
@@ -605,16 +597,7 @@ class OrderService
                 throw new Exception('Cannot delete delivered orders. Consider cancelling instead.');
             }
             
-            // Release stock if order is not cancelled
-            if ($order->status !== 'cancelled') {
-                foreach ($order->orderItems as $item) {
-                    $this->inventoryService->releaseStock(
-                        $item->product_id,
-                        $item->quantity,
-                        $order->id
-                    );
-                }
-            }
+            // Stock release removed - no need to release stock on deletion
             
             $orderData = [
                 'id' => $order->id,
@@ -879,14 +862,7 @@ class OrderService
             $order->cancelled_by = 'admin';
             $order->save();
             
-            // Release stock
-            foreach ($order->orderItems as $item) {
-                $this->inventoryService->releaseStock(
-                    $item->product_id,
-                    $item->quantity,
-                    $order->id
-                );
-            }
+            // Stock release removed - no need to release stock on cancellation
             
             DB::commit();
             
@@ -1037,14 +1013,7 @@ class OrderService
             $order->cancellation_requested_by = null;
             $order->save();
             
-            // Release stock
-            foreach ($order->orderItems as $item) {
-                $this->inventoryService->releaseStock(
-                    $item->product_id,
-                    $item->quantity,
-                    $order->id
-                );
-            }
+            // Stock release removed - no need to release stock on cancellation
             
             DB::commit();
             

@@ -33,6 +33,9 @@ use App\Http\Controllers\Api\OrderController as ApiOrderController;
 use App\Http\Controllers\Api\ShippingRateController;
 use App\Http\Controllers\Api\AdminShippingRateController;
 use App\Http\Controllers\Api\SavedProductController;
+use App\Http\Controllers\Api\DistrictController;
+use App\Http\Controllers\Api\UpazilaController;
+use App\Http\Controllers\Api\PaymentMethodController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -97,6 +100,25 @@ Route::prefix('shipping-rates')->group(function () {
     Route::get('/', [ShippingRateController::class, 'index']);
     Route::get('/grouped', [ShippingRateController::class, 'grouped']);
     Route::get('/category/{category}', [ShippingRateController::class, 'byCategory']);
+});
+
+// Public District and Upazila routes (No authentication required)
+Route::prefix('districts')->group(function () {
+    Route::get('/', [DistrictController::class, 'index']);
+    Route::get('/divisions', [DistrictController::class, 'divisions']);
+    Route::get('/{id}', [DistrictController::class, 'show']);
+});
+
+Route::prefix('upazillas')->group(function () {
+    Route::get('/', [UpazilaController::class, 'index']);
+    Route::get('/district/{districtId}', [UpazilaController::class, 'byDistrict']);
+    Route::get('/{id}', [UpazilaController::class, 'show']);
+});
+
+// Public Payment Method routes (No authentication required)
+Route::prefix('payment-methods')->group(function () {
+    Route::get('/', [PaymentMethodController::class, 'index']);
+    Route::get('/{id}', [PaymentMethodController::class, 'show']);
 });
 
 // Public Deal routes (No authentication required)
@@ -370,6 +392,39 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{shippingRate}', [AdminShippingRateController::class, 'update']);
             Route::delete('/{shippingRate}', [AdminShippingRateController::class, 'destroy']);
             Route::post('/{shippingRate}/toggle-active', [AdminShippingRateController::class, 'toggleActive']);
+        });
+
+        // Admin District Management
+        Route::prefix('admin/districts')->group(function () {
+            Route::get('/', [DistrictController::class, 'index']);
+            Route::post('/', [DistrictController::class, 'store']);
+            Route::get('/{id}', [DistrictController::class, 'show']);
+            Route::put('/{id}', [DistrictController::class, 'update']);
+            Route::delete('/{id}', [DistrictController::class, 'destroy']);
+            Route::post('/{id}/toggle-active', [DistrictController::class, 'toggleActive']);
+        });
+
+        // Admin Upazila Management
+        Route::prefix('admin/upazillas')->group(function () {
+            Route::get('/', [UpazilaController::class, 'index']);
+            Route::post('/', [UpazilaController::class, 'store']);
+            Route::get('/{id}', [UpazilaController::class, 'show']);
+            Route::put('/{id}', [UpazilaController::class, 'update']);
+            Route::delete('/{id}', [UpazilaController::class, 'destroy']);
+            Route::post('/{id}/toggle-active', [UpazilaController::class, 'toggleActive']);
+        });
+
+        // Admin Payment Method Management
+        Route::prefix('admin/payment-methods')->group(function () {
+            Route::get('/', [PaymentMethodController::class, 'index']);
+            Route::post('/', [PaymentMethodController::class, 'store']);
+            Route::get('/{id}', [PaymentMethodController::class, 'show']);
+            Route::post('/{id}', [PaymentMethodController::class, 'update']); // POST for form-data with file
+            Route::put('/{id}', [PaymentMethodController::class, 'update']); // PUT for JSON
+            Route::delete('/{id}', [PaymentMethodController::class, 'destroy']);
+            Route::post('/{id}/toggle-active', [PaymentMethodController::class, 'toggleActive']);
+            Route::delete('/{id}/logo', [PaymentMethodController::class, 'deleteLogo']);
+            Route::post('/sort-order', [PaymentMethodController::class, 'updateSortOrder']);
         });
 
         // Admin Deal Management

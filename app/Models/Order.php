@@ -12,6 +12,9 @@ class Order extends Model
         'coupon_id',
         'coupon_code',
         'subtotal',
+        'original_price',
+        'paid_amount',
+        'due_amount',
         'discount_amount',
         'shipping_cost',
         'shipping_method',
@@ -21,6 +24,7 @@ class Order extends Model
         'total_amount',
         'status',
         'payment_method',
+        'payment_method_id',
         'payment_status',
         'transaction_number',
         'payment_receipt_image',
@@ -36,6 +40,9 @@ class Order extends Model
 
     protected $casts = [
         'subtotal' => 'decimal:2',
+        'original_price' => 'decimal:2',
+        'paid_amount' => 'decimal:2',
+        'due_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'shipping_cost' => 'decimal:2',
         'tax_amount' => 'decimal:2',
@@ -77,6 +84,11 @@ class Order extends Model
     public function statusHistory()
     {
         return $this->hasMany(OrderStatusHistory::class)->orderBy('created_at', 'desc');
+    }
+
+    public function paymentMethod()
+    {
+        return $this->belongsTo(PaymentMethod::class);
     }
 
     /**
