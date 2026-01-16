@@ -226,7 +226,7 @@ class ProductController extends Controller
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // Max 5MB
             'image_url' => 'nullable|url', // Alternative: provide image URL directly
             'page' => 'nullable|integer|min:1',
-            'page_size' => 'nullable|integer|min:1|max:20',
+            'page_size' => 'nullable|integer|min:1|max:100',
             'sort' => 'nullable|string|in:default,sales,price_up,price_down',
             'price_start' => 'nullable|numeric|min:0',
             'price_end' => 'nullable|numeric|min:0',
