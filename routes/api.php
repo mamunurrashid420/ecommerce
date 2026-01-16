@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\AdminDealController;
 use App\Http\Controllers\Api\SupportTicketController;
 use App\Http\Controllers\Api\SupportMessageController;
 use App\Http\Controllers\Api\AdminDashboardController;
+use App\Http\Controllers\Api\CustomerDashboardController;
 use App\Http\Controllers\Api\ExportReportController;
 use App\Http\Controllers\Api\LandingPageController;
 use App\Http\Controllers\Dropship\ProductController as DropshipProductController;
@@ -60,6 +61,7 @@ Route::get('/shop/{sellerId}/products', [DropshipShopController::class, 'product
 Route::prefix('customer')->group(function () {
     Route::post('/login', [CustomerAuthController::class, 'login']); // Send OTP to mobile
     Route::post('/verify-otp', [CustomerAuthController::class, 'verifyOtp']); // Verify OTP and get token
+    
 });
 
 Route::get('/products', [ProductController::class, 'index']);
@@ -180,6 +182,17 @@ Route::middleware('customer')->prefix('customer')->group(function () {
     Route::post('/saved-products/toggle', [SavedProductController::class, 'toggle']);
     Route::get('/saved-products/check/{productId}', [SavedProductController::class, 'check']);
     Route::delete('/saved-products/{id}', [SavedProductController::class, 'destroy']);
+
+
+    // Customer Dashboard
+    Route::prefix('dashboard')->group(function () {
+        Route::get('/stats', [CustomerDashboardController::class, 'stats']);
+        Route::get('/recent-activity', [CustomerDashboardController::class, 'recentActivity']);
+        Route::get('/profile-summary', [CustomerDashboardController::class, 'profile']);
+        Route::get('/order-status-breakdown', [CustomerDashboardController::class, 'orderStatusBreakdown']);
+        Route::get('/spending-trend', [CustomerDashboardController::class, 'spendingTrend']);
+    });
+    
 });
 
 // Order routes - allow both customers and admins
@@ -262,6 +275,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Site Settings (accessible to all authenticated users)
     Route::get('/site-settings', [SiteSettingController::class, 'show']);
+
+
 
     // Notifications (accessible to all authenticated users)
     Route::prefix('notifications')->group(function () {

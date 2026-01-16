@@ -40,6 +40,10 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'customer' => [
+            'driver' => 'sanctum',
+            'provider' => 'customers',
+        ],
         'sanctum' => [
             'driver' => 'sanctum',
             'provider' => 'users', // Default provider, but Sanctum resolves models from tokenable_type
