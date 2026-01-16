@@ -273,7 +273,7 @@ class ProductController extends Controller
                 $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
     
                 // Public URL
-                $searchImageUrl = Storage::disk('public')->url($uploadedImagePath);
+                return $searchImageUrl = Storage::disk('public')->url($uploadedImagePath);
     
                 Log::info('Image uploaded successfully', [
                     'uploaded_path' => $uploadedImagePath,
