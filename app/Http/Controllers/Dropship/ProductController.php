@@ -10,7 +10,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
+
 
 class ProductController extends Controller
 {
@@ -220,11 +222,11 @@ class ProductController extends Controller
      *
      * Note: Accepts both image file upload and image_url parameter
      */
-    public function searchProductsByImage(Request $request): JsonResponse
+    
+    public function searchProductsByImage(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // Max 5MB
-            'image_url' => 'nullable|url', // Alternative: provide image URL directly
+            'image' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
             'page' => 'nullable|integer|min:1',
             'page_size' => 'nullable|integer|min:1|max:100',
             'sort' => 'nullable|string|in:default,sales,price_up,price_down',
@@ -237,7 +239,7 @@ class ProductController extends Controller
             'new_arrival' => 'nullable|boolean',
             'lang' => 'nullable|string|max:10',
         ]);
-
+    
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -245,134 +247,73 @@ class ProductController extends Controller
                 'errors' => $validator->errors(),
             ], 422);
         }
-
-        // Check if either image or image_url is provided
-        if (!$request->hasFile('image') && !$request->has('image_url')) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Either image file or image_url is required',
-            ], 422);
-        }
-
+    
         try {
-            $searchImageUrl = null;
             $uploadedImagePath = null;
-
-            // If image_url is provided, use it directly
-            if ($request->has('image_url')) {
-                $searchImageUrl = $request->input('image_url');
-            }
-            // Otherwise, handle file upload
-            else if ($request->hasFile('image')) {
-                // Store the uploaded image temporarily
-                $image = $request->file('image');
-                $filename = 'search_' . time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
-                $uploadedImagePath = $image->storeAs('search_images', $filename, 'public');
-
-                // Generate public URL for the uploaded image using the actual request host
-                // This ensures we use the production domain even if APP_URL is set to localhost
-                $imageUrl = Storage::url($uploadedImagePath);
-                
-                // Use request scheme and host instead of APP_URL to ensure correct domain
-                $scheme = $request->getScheme(); // http or https
-                $host = $request->getHost(); // api.e3shopbd.com or actual domain
-                $searchImageUrl = $scheme . '://' . $host . $imageUrl;
-
-                // Important: For localhost development, TMAPI cannot access your local images
-                // You need to either:
-                // 1. Use a publicly accessible URL (production server with public domain)
-                // 2. Upload to a CDN or image hosting service first
-                // 3. Use ngrok or similar to expose your local server
-                // 4. Provide an image_url parameter with an already accessible image
-            }
-
-            $platform = '1688'; // Fixed to 1688 platform
-            $page = $request->integer('page', 1);
-            $pageSize = $request->integer('page_size', 20);
-            $lang = $request->input('lang', 'en');
-
-            // Build options array with filters
-            $options = [
-                'sort' => $request->input('sort', 'default'),
-                'price_start' => $request->input('price_start'),
-                'price_end' => $request->input('price_end'),
-                'support_dropshipping' => $request->boolean('support_dropshipping'),
-                'is_factory' => $request->boolean('is_factory'),
-                'verified_supplier' => $request->boolean('verified_supplier'),
-                'free_shipping' => $request->boolean('free_shipping'),
-                'new_arrival' => $request->boolean('new_arrival'),
-            ];
-
-            // Call the dropship service to search by image
-            $result = $this->dropshipService->searchByImage($platform, $searchImageUrl, $page, $pageSize, $lang, $options);
-
-            // Clean up: Delete the temporary image after search (if uploaded)
-            if ($uploadedImagePath) {
-                Storage::disk('public')->delete($uploadedImagePath);
+            $absoluteFilePath = null;
+            $searchImageUrl = null;
+    
+            /* ================================
+             | Upload image & generate URL
+             |================================
+             */
+            if ($request->hasFile('image')) {
+                $imageFile = $request->file('image');
+    
+                $filename = 'search_' . time() . '_' . uniqid() . '.' . $imageFile->getClientOriginalExtension();
+    
+                // Save to storage/app/public/search-images
+                $uploadedImagePath = $imageFile->storeAs(
+                    'search-images',
+                    $filename,
+                    'public'
+                );
+    
+                // Absolute path (server filesystem)
+                $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
+    
+                // Public URL
+                $searchImageUrl = Storage::disk('public')->url($uploadedImagePath);
+    
+                Log::info('Image uploaded successfully', [
+                    'uploaded_path' => $uploadedImagePath,
+                    'absolute_path' => $absoluteFilePath,
+                    'file_exists' => file_exists($absoluteFilePath),
+                    'file_size' => file_exists($absoluteFilePath) ? filesize($absoluteFilePath) : 0,
+                    'image_url' => $searchImageUrl,
+                ]);
             }
 
-            if (!$result['success']) {
-                // Provide helpful error message
-                $errorMessage = $result['message'] ?? 'Failed to search products by image';
-                $errorCode = $result['error_code'] ?? null;
-
-                // Check if this is a localhost/local network issue
-                $isLocalhost = str_contains($searchImageUrl, 'localhost') || 
-                              str_contains($searchImageUrl, '127.0.0.1') ||
-                              str_contains($searchImageUrl, '192.168.') ||
-                              str_contains($searchImageUrl, '10.') ||
-                              str_contains($searchImageUrl, '172.16.');
-
-                if ($isLocalhost) {
-                    $errorMessage .= ' - Note: TMAPI cannot access localhost or private network URLs. Please use a publicly accessible image URL.';
-                }
-
-                // Additional debugging information for 404 errors
-                $suggestion = 'For testing, use the image_url parameter with a publicly accessible image (e.g., from 1688, Alibaba, or any CDN)';
-                if ($errorCode == 404) {
-                    $suggestion .= '. Ensure the image URL is publicly accessible and returns a valid image when accessed directly.';
-                }
-
-                return response()->json([
-                    'success' => false,
-                    'message' => $errorMessage,
-                    'error_code' => $errorCode,
-                    'image_url_used' => $searchImageUrl, // Include the URL that was sent to help debug
-                    'suggestion' => $suggestion,
-                ], 400);
-            }
-
-            // Transform response to match searchProducts format
-            $products = $result['data'];
-
-            // Convert prices and currency for all items
-            $products = $this->convertProductListPrices($products);
-
+            $result = $this->dropshipService->searchByImage(
+                '1688',
+                $searchImageUrl,
+                1,
+                20,
+                'en',
+                []
+            );
+        
+    
             return response()->json([
-                'result' => [
-                    'page' => $page,
-                    'per_page' => $pageSize,
-                    'total_found' => $result['data']['total_results'] ?? count($products),
-                    'products' => $products,
-                    'keywords' => [],
-                    'time' => now()->toIso8601String(),
-                ],
-                'image' => $searchImageUrl,
+                'success' => true,
+                'message' => 'Image uploaded successfully',
+                'data' => $result
             ]);
-
-        } catch (\Exception $e) {
-            // Clean up on error
-            if (isset($uploadedImagePath)) {
-                Storage::disk('public')->delete($uploadedImagePath);
-            }
-
+    
+        } catch (\Throwable $e) {
+            Log::error('Image upload error', [
+                'error' => $e->getMessage(),
+            ]);
+    
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to process image search',
+                'message' => 'Failed to upload image',
                 'error' => $e->getMessage(),
             ], 500);
         }
     }
+    
+    
 
     /**
      * Convert prices and currency for product list
