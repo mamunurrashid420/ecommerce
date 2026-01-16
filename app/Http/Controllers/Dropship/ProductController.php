@@ -269,9 +269,14 @@ class ProductController extends Controller
                 $filename = 'search_' . time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
                 $uploadedImagePath = $image->storeAs('search_images', $filename, 'public');
 
-                // Generate public URL for the uploaded image
+                // Generate public URL for the uploaded image using the actual request host
+                // This ensures we use the production domain even if APP_URL is set to localhost
                 $imageUrl = Storage::url($uploadedImagePath);
-                $searchImageUrl = url($imageUrl);
+                
+                // Use request scheme and host instead of APP_URL to ensure correct domain
+                $scheme = $request->getScheme(); // http or https
+                $host = $request->getHost(); // api.e3shopbd.com or actual domain
+                $searchImageUrl = $scheme . '://' . $host . $imageUrl;
 
                 // Important: For localhost development, TMAPI cannot access your local images
                 // You need to either:
@@ -307,18 +312,33 @@ class ProductController extends Controller
             }
 
             if (!$result['success']) {
-                // Provide helpful error message for localhost development
+                // Provide helpful error message
                 $errorMessage = $result['message'] ?? 'Failed to search products by image';
+                $errorCode = $result['error_code'] ?? null;
 
-                if (str_contains($searchImageUrl, 'localhost') || str_contains($searchImageUrl, '127.0.0.1')) {
-                    $errorMessage .= ' - Note: TMAPI cannot access localhost URLs. Please use a publicly accessible image URL or deploy to a public server.';
+                // Check if this is a localhost/local network issue
+                $isLocalhost = str_contains($searchImageUrl, 'localhost') || 
+                              str_contains($searchImageUrl, '127.0.0.1') ||
+                              str_contains($searchImageUrl, '192.168.') ||
+                              str_contains($searchImageUrl, '10.') ||
+                              str_contains($searchImageUrl, '172.16.');
+
+                if ($isLocalhost) {
+                    $errorMessage .= ' - Note: TMAPI cannot access localhost or private network URLs. Please use a publicly accessible image URL.';
+                }
+
+                // Additional debugging information for 404 errors
+                $suggestion = 'For testing, use the image_url parameter with a publicly accessible image (e.g., from 1688, Alibaba, or any CDN)';
+                if ($errorCode == 404) {
+                    $suggestion .= '. Ensure the image URL is publicly accessible and returns a valid image when accessed directly.';
                 }
 
                 return response()->json([
                     'success' => false,
                     'message' => $errorMessage,
-                    'error_code' => $result['error_code'] ?? null,
-                    'suggestion' => 'For testing, use the image_url parameter with a publicly accessible image (e.g., from 1688, Alibaba, or any CDN)',
+                    'error_code' => $errorCode,
+                    'image_url_used' => $searchImageUrl, // Include the URL that was sent to help debug
+                    'suggestion' => $suggestion,
                 ], 400);
             }
 
