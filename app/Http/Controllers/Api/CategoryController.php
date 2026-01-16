@@ -413,12 +413,11 @@ class CategoryController extends Controller
                 'meta_keywords' => 'nullable|string|max:500',
             ];
 
-            // Add icon validation only if file is present
+            // Add icon validation only if file is present, otherwise skip icon validation entirely
             if ($hasIconFile) {
                 $validationRules['icon'] = 'required|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
-            } else {
-                $validationRules['icon'] = 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
             }
+            // If no file is uploaded and icon field contains a string path, don't validate it as an image
 
             $validator = Validator::make($request->all(), $validationRules);
 

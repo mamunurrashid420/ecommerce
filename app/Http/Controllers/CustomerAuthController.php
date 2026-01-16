@@ -162,6 +162,9 @@ class CustomerAuthController extends Controller
         // Create authentication token
         $token = $customer->createToken('auth-token')->plainTextToken;
 
+        // Load district and city relationships
+        $customer->load(['districtRelation', 'cityRelation']);
+
         return response()->json([
             'success' => true,
             'message' => 'Login successful',
@@ -266,6 +269,9 @@ class CustomerAuthController extends Controller
             ], 401);
         }
 
+        // Load district and city relationships
+        $customer->load(['districtRelation', 'cityRelation']);
+
         return response()->json([
             'data' => $customer
         ]);
@@ -346,6 +352,9 @@ class CustomerAuthController extends Controller
             'name' => 'sometimes|nullable|string|max:255',
             'email' => 'sometimes|nullable|email|max:255|unique:customers,email,' . $customer->id,
             'address' => 'sometimes|nullable|string',
+            'emergency_number' => 'sometimes|nullable|string|max:20',
+            'district' => 'sometimes|nullable|integer|exists:districts,id',
+            'city' => 'sometimes|nullable|integer|exists:upazillas,id',
         ];
 
         // Add file validation if file is present
@@ -357,8 +366,8 @@ class CustomerAuthController extends Controller
 
         // Get update data - use only() which works for both JSON and form data
         // This will only include fields that are present in the request
-        $updateData = $request->only(['name', 'email', 'address']);
-        
+        $updateData = $request->only(['name', 'email', 'address', 'emergency_number', 'district', 'city']);
+
         // Remove null values (fields not provided or explicitly set to null)
         // Keep empty strings as they are valid values
         $updateData = array_filter($updateData, function ($value) {
@@ -405,9 +414,12 @@ class CustomerAuthController extends Controller
             $customer->update($updateData);
         }
 
+        // Refresh and load relationships
+        $customer = $customer->fresh(['districtRelation', 'cityRelation']);
+
         return response()->json([
             'message' => 'Profile updated successfully',
-            'data' => $customer->fresh(),
+            'data' => $customer,
         ]);
     }
 

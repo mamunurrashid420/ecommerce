@@ -11,7 +11,7 @@ class Customer extends Authenticatable
     use HasApiTokens, Notifiable;
 
     protected $fillable = [
-        'name', 'email', 'password', 'phone', 'address', 'role', 'otp', 'otp_expires_at', 'profile_picture',
+        'name', 'email', 'password', 'phone', 'emergency_number', 'address', 'district', 'city', 'role', 'otp', 'otp_expires_at', 'profile_picture',
         'is_banned', 'is_suspended', 'banned_at', 'suspended_at', 'ban_reason', 'suspend_reason'
     ];
 
@@ -53,6 +53,16 @@ class Customer extends Authenticatable
     public function savedProducts()
     {
         return $this->hasMany(SavedProduct::class);
+    }
+
+    public function districtRelation()
+    {
+        return $this->belongsTo(District::class, 'district');
+    }
+
+    public function cityRelation()
+    {
+        return $this->belongsTo(Upazila::class, 'city');
     }
 
     public function isAdmin()
