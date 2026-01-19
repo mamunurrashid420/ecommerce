@@ -37,6 +37,8 @@ use App\Http\Controllers\Api\SavedProductController;
 use App\Http\Controllers\Api\DistrictController;
 use App\Http\Controllers\Api\UpazilaController;
 use App\Http\Controllers\Api\PaymentMethodController;
+use App\Http\Controllers\Api\OfferController;
+use App\Http\Controllers\Api\AdminOfferController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -131,6 +133,13 @@ Route::prefix('deals')->group(function () {
     Route::get('/product/{productId}', [DealController::class, 'forProduct']);
     Route::get('/category/{categoryId}', [DealController::class, 'forCategory']);
     Route::get('/{identifier}', [DealController::class, 'show']);
+});
+
+// Public Offer routes (No authentication required)
+Route::prefix('offers')->group(function () {
+    Route::get('/', [OfferController::class, 'index']);
+    Route::get('/customer', [OfferController::class, 'customerOffers']);
+    Route::get('/{id}', [OfferController::class, 'show']);
 });
 
 // Admin User Management Routes (Protected - Admin only)
@@ -455,6 +464,20 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{deal}', [AdminDealController::class, 'destroy']);
             Route::post('/{deal}/toggle-active', [AdminDealController::class, 'toggleActive']);
             Route::post('/{deal}/toggle-featured', [AdminDealController::class, 'toggleFeatured']);
+        });
+
+        // Admin Offer Management
+        Route::prefix('admin/offers')->group(function () {
+            Route::get('/', [AdminOfferController::class, 'index']);
+            Route::post('/', [AdminOfferController::class, 'store']);
+            Route::get('/stats', [AdminOfferController::class, 'stats']);
+            Route::get('/{offer}', [AdminOfferController::class, 'show']);
+            Route::put('/{offer}', [AdminOfferController::class, 'update']);
+            Route::post('/{offer}', [AdminOfferController::class, 'update']); // POST for form-data with file
+            Route::delete('/{offer}', [AdminOfferController::class, 'destroy']);
+            Route::post('/{offer}/toggle-active', [AdminOfferController::class, 'toggleActive']);
+            Route::post('/{offer}/toggle-featured', [AdminOfferController::class, 'toggleFeatured']);
+            Route::post('/sort-order', [AdminOfferController::class, 'updateSortOrder']);
         });
 
         // Admin Support Ticket Management
