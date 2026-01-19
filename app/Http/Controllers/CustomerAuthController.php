@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -55,6 +56,11 @@ class CustomerAuthController extends Controller
             'mobile' => 'required|string|max:20',
         ]);
 
+        $smsService = new SmsService();
+        
+        // Format mobile number
+        $formattedMobile = $smsService->formatMobile($request->mobile);
+
         // Find or create customer by mobile number
         $customer = Customer::where('phone', $request->mobile)->first();
 
@@ -84,26 +90,45 @@ class CustomerAuthController extends Controller
             ]);
         }
 
-        // Generate OTP (default: 1234 since no SMS gateway is configured)
-        $defaultOtp = '1234';
+        // Generate random 4-digit OTP
+        $otp = str_pad(random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
         $otpExpiresAt = Carbon::now()->addMinutes(10); // OTP valid for 10 minutes
 
         // Update customer's OTP
         $customer->update([
-            'otp' => $defaultOtp,
+            'otp' => $otp,
             'otp_expires_at' => $otpExpiresAt,
         ]);
 
-        // In production, send OTP via SMS gateway here
-        // For now, we return the OTP in the response (remove this in production)
+        // Send OTP via SMS
+        $smsResult = $smsService->sendOtp($formattedMobile, $otp);
+
+        // Check if SMS was sent successfully
+        if (!$smsResult['success']) {
+            // If SMS fails, still allow login but log the error
+            \Log::error('SMS sending failed for mobile: ' . $formattedMobile, $smsResult);
+            
+            // In development, you might want to return the OTP for testing
+            if (config('app.debug')) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'OTP generated (SMS failed - check logs)',
+                    'data' => [
+                        'expires_at' => $otpExpiresAt->toDateTimeString(),
+                        'otp' => $otp, // Only in debug mode
+                        'sms_error' => $smsResult['error'] ?? 'Unknown SMS error'
+                    ],
+                ], 200);
+            }
+        }
 
         return response()->json([
             'success' => true,
             'message' => 'OTP sent successfully to your mobile number',
             'data' => [
                 'expires_at' => $otpExpiresAt->toDateTimeString(),
+                'mobile' => $formattedMobile,
             ],
-
         ], 200);
     }
 

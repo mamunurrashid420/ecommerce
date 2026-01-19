@@ -16,6 +16,7 @@ class SiteSetting extends Model
         'email',
         'support_email',
         'address',
+        'secondary_address',
         'map_url',
         'business_name',
         'business_registration_number',
@@ -25,6 +26,7 @@ class SiteSetting extends Model
         'favicon',
         'slider_images',
         'offer',
+        'promotional_items',
         'social_links',
         'meta_title',
         'meta_description',
@@ -68,6 +70,7 @@ class SiteSetting extends Model
         'social_links' => 'array',
         'slider_images' => 'array',
         'offer' => 'array',
+        'promotional_items' => 'array',
         'business_hours' => 'array',
         'payment_methods' => 'array',
         'shipping_methods' => 'array',
@@ -204,6 +207,16 @@ class SiteSetting extends Model
     }
 
     /**
+     * Get promotional items with full URLs
+     */
+    protected function promotionalItemsWithUrls(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->getPromotionalItemsWithUrls()
+        );
+    }
+
+    /**
      * Helper method to get full URLs for slider images
      */
     private function getSliderImagesUrls()
@@ -258,6 +271,30 @@ class SiteSetting extends Model
             'start_date' => $this->offer['start_date'] ?? null,
             'end_date' => $this->offer['end_date'] ?? null,
         ];
+    }
+
+    /**
+     * Helper method to get promotional items with full URLs
+     */
+    private function getPromotionalItemsWithUrls()
+    {
+        if (empty($this->promotional_items) || !is_array($this->promotional_items)) {
+            return [];
+        }
+
+        return array_map(function ($item) {
+            if (!is_array($item)) {
+                return [
+                    'image' => null,
+                    'url' => null,
+                ];
+            }
+
+            return [
+                'image' => $this->getFullUrl($item['image'] ?? null),
+                'url' => $item['url'] ?? null,
+            ];
+        }, $this->promotional_items);
     }
 
     /**

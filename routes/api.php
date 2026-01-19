@@ -152,6 +152,9 @@ Route::get('/categories/featured', [CategoryController::class, 'featured']);
 Route::get('/categories/tree', [CategoryController::class, 'tree']);
 Route::get('/categories/{category}', [CategoryController::class, 'show']);
 
+// Customer-specific Category routes (simplified data)
+Route::get('/customer/categories', [CategoryController::class, 'customerIndex']);
+
 // Public Search route (available for both authenticated and guest users)
 Route::get('/search', [SearchController::class, 'search']);
 

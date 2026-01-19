@@ -33,6 +33,7 @@ class SiteSettingController extends Controller
                     'email' => $settings->email,
                     'support_email' => $settings->support_email,
                     'address' => $settings->address,
+                    'secondary_address' => $settings->secondary_address,
                     'map_url' => $settings->map_url,
                     'business_name' => $settings->business_name,
                     'business_registration_number' => $settings->business_registration_number,
@@ -42,6 +43,7 @@ class SiteSettingController extends Controller
                     'favicon' => $settings->favicon_url,
                     'slider_images' => $settings->slider_images_urls,
                     'offer' => $settings->offer_with_url,
+                    'promotional_items' => $settings->promotional_items_with_urls,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -109,6 +111,7 @@ class SiteSettingController extends Controller
                 'email' => 'nullable|email|max:255',
                 'support_email' => 'nullable|email|max:255',
                 'address' => 'nullable|string',
+                'secondary_address' => 'nullable|string',
                 'map_url' => 'nullable|url|max:500',
                 'business_name' => 'nullable|string|max:255',
                 'business_registration_number' => 'nullable|string|max:100',
@@ -164,6 +167,9 @@ class SiteSettingController extends Controller
                 'offer.promotional_image' => 'nullable|string',
                 'offer.start_date' => 'nullable|date',
                 'offer.end_date' => 'nullable|date|after:offer.start_date',
+                'promotional_items' => 'nullable|array|max:3',
+                'promotional_items.*.image' => 'nullable|string',
+                'promotional_items.*.url' => 'nullable|url|max:500',
             ];
 
             // Add conditional validation for logo fields
@@ -189,6 +195,14 @@ class SiteSettingController extends Controller
             // Validation for promotional image upload
             if ($request->hasFile('promotional_image')) {
                 $rules['promotional_image'] = 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+            }
+
+            // Validation for promotional item images
+            if ($request->hasFile('promotional_item_images')) {
+                $rules['promotional_item_images'] = 'nullable|array|max:3';
+                $rules['promotional_item_images.*'] = 'image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+                $rules['promotional_item_urls'] = 'nullable|array';
+                $rules['promotional_item_urls.*'] = 'nullable|url|max:500';
             }
 
             // Validation for slider images
@@ -246,7 +260,7 @@ class SiteSettingController extends Controller
             }
 
             $settings = SiteSetting::getInstance();
-            $data = $request->except(['header_logo', 'footer_logo', 'favicon', 'slider_images', 'promotional_image']);
+            $data = $request->except(['header_logo', 'footer_logo', 'favicon', 'slider_images', 'promotional_image', 'promotional_item_images']);
 
             // Handle file uploads
             if ($request->hasFile('header_logo')) {
@@ -386,6 +400,103 @@ class SiteSettingController extends Controller
                 $data['slider_images'] = $formattedImages;
             }
 
+            // Handle promotional item images uploads
+            if ($request->hasFile('promotional_item_images')) {
+                // Get existing promotional items (don't delete them)
+                $existingItems = $settings->promotional_items ?? [];
+                if (!is_array($existingItems)) {
+                    $existingItems = [];
+                }
+                
+                // Upload new promotional item images with URLs
+                $uploadedItems = [];
+                $files = $request->file('promotional_item_images');
+                $urls = $request->input('promotional_item_urls', []);
+                
+                foreach ($files as $index => $image) {
+                    $imagePath = $image->store('promotional', 'public');
+                    $uploadedItems[] = [
+                        'image' => $imagePath,
+                        'url' => $urls[$index] ?? null,
+                    ];
+                }
+                
+                // Append new items to existing ones instead of replacing (max 3 items)
+                $allItems = array_merge($existingItems, $uploadedItems);
+                $data['promotional_items'] = array_slice($allItems, 0, 3); // Limit to 3 items
+            } elseif ($request->has('promotional_items')) {
+                // If promotional_items is provided as an array (for updating/reordering/deleting)
+                $newItems = $request->input('promotional_items', []);
+                
+                // Normalize to ensure it's an array
+                if (is_string($newItems)) {
+                    $decoded = json_decode($newItems, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $newItems = $decoded;
+                    } else {
+                        $newItems = [];
+                    }
+                }
+                
+                if (!is_array($newItems)) {
+                    $newItems = [];
+                }
+                
+                // Limit to 3 items
+                $newItems = array_slice($newItems, 0, 3);
+                
+                $existingItems = $settings->promotional_items ?? [];
+                if (!is_array($existingItems)) {
+                    $existingItems = [];
+                }
+                
+                // Find images that were removed and delete them
+                if (!empty($existingItems) && !empty($newItems)) {
+                    $existingPaths = array_map(function ($item) {
+                        return is_array($item) ? ($item['image'] ?? null) : null;
+                    }, $existingItems);
+                    
+                    $newPaths = array_map(function ($item) {
+                        return is_array($item) ? ($item['image'] ?? null) : null;
+                    }, $newItems);
+                    
+                    $removedPaths = array_diff(array_filter($existingPaths), array_filter($newPaths));
+                    foreach ($removedPaths as $removedPath) {
+                        if ($removedPath) {
+                            Storage::delete($removedPath);
+                        }
+                    }
+                } elseif (empty($newItems) && !empty($existingItems)) {
+                    // If new items is empty but existing items exist, delete all existing images
+                    foreach ($existingItems as $item) {
+                        $imagePath = is_array($item) ? ($item['image'] ?? null) : null;
+                        if ($imagePath) {
+                            Storage::delete($imagePath);
+                        }
+                    }
+                }
+                
+                // Ensure all items are in the correct format
+                $formattedItems = [];
+                if (!empty($newItems)) {
+                    $formattedItems = array_map(function ($item) {
+                        if (!is_array($item)) {
+                            return [
+                                'image' => null,
+                                'url' => null,
+                            ];
+                        }
+                        // Ensure all fields are present
+                        return [
+                            'image' => $item['image'] ?? null,
+                            'url' => $item['url'] ?? null,
+                        ];
+                    }, $newItems);
+                }
+                
+                $data['promotional_items'] = $formattedItems;
+            }
+
             $settings->update($data);
 
             return response()->json([
@@ -401,6 +512,7 @@ class SiteSettingController extends Controller
                     'email' => $settings->email,
                     'support_email' => $settings->support_email,
                     'address' => $settings->address,
+                    'secondary_address' => $settings->secondary_address,
                     'map_url' => $settings->map_url,
                     'business_name' => $settings->business_name,
                     'business_registration_number' => $settings->business_registration_number,
@@ -410,6 +522,7 @@ class SiteSettingController extends Controller
                     'favicon' => $settings->favicon_url,
                     'slider_images' => $settings->slider_images_urls,
                     'offer' => $settings->offer_with_url,
+                    'promotional_items' => $settings->promotional_items_with_urls,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,
@@ -502,6 +615,7 @@ class SiteSettingController extends Controller
                     'contact_number' => $settings->contact_number,
                     'email' => $settings->email,
                     'address' => $settings->address,
+                    'secondary_address' => $settings->secondary_address,
                     'map_url' => $settings->map_url,
                     'business_name' => $settings->business_name,
                     'header_logo' => $settings->header_logo_url,
@@ -509,6 +623,7 @@ class SiteSettingController extends Controller
                     'favicon' => $settings->favicon_url,
                     'slider_images' => $settings->slider_images_urls,
                     'offer' => $settings->offer_with_url,
+                    'promotional_items' => $settings->promotional_items_with_urls,
                     'social_links' => $settings->social_links_with_defaults,
                     'meta_title' => $settings->meta_title,
                     'meta_description' => $settings->meta_description,

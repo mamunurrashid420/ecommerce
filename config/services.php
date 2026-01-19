@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'bdbulksms' => [
+        'token' => env('BDBULKSMS_TOKEN'),
+        'url' => env('BDBULKSMS_URL', 'https://api.bdbulksms.net/api.php?json'),
+    ],
+
 ];

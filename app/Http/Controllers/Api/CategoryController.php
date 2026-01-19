@@ -20,23 +20,41 @@ class CategoryController extends Controller
         try {
             $query = Category::with(['creator', 'updater']);
 
+            // Always load children categories by default
+            $query->with(['children' => function ($query) {
+                $query->active()->orderBy('sort_order')->with(['creator', 'updater']);
+            }]);
+
             // Apply filters
             if ($request->has('featured') && $request->featured == 'true') {
                 $query->featured();
             }
 
-            if ($request->has('parent_only') && $request->parent_only == 'true') {
-                $query->parent();
+            // By default, only show parent categories (parent_id is null) unless explicitly requested
+            if (!$request->has('parent_only') || $request->parent_only !== 'false') {
+                $query->parent(); // Only parent categories in main array
             }
 
             if ($request->has('active') && $request->active == 'true') {
                 $query->active();
             }
 
-            if ($request->has('with_children') && $request->with_children == 'true') {
-                $query->with(['children' => function ($query) {
-                    $query->active()->orderBy('sort_order');
-                }]);
+            // Option to exclude children if needed
+            if ($request->has('with_children') && $request->with_children == 'false') {
+                $query = Category::with(['creator', 'updater']); // Reset query without children
+                
+                // Reapply filters
+                if ($request->has('featured') && $request->featured == 'true') {
+                    $query->featured();
+                }
+
+                if (!$request->has('parent_only') || $request->parent_only !== 'false') {
+                    $query->parent();
+                }
+
+                if ($request->has('active') && $request->active == 'true') {
+                    $query->active();
+                }
             }
 
             // Sorting
@@ -94,6 +112,83 @@ class CategoryController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch categories dropdown',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get categories for customers (simplified structure with essential fields only)
+     */
+    public function customerIndex(Request $request)
+    {
+        try {
+            $query = Category::active()
+                ->select('id', 'name', 'icon', 'slug', 'image_url', 'meta_title', 'meta_description', 'meta_keywords', 'parent_id');
+
+            // Load children with same essential fields
+            $query->with(['children' => function ($query) {
+                $query->active()
+                    ->select('id', 'name', 'icon', 'slug', 'image_url', 'meta_title', 'meta_description', 'meta_keywords', 'parent_id')
+                    ->orderBy('sort_order');
+            }]);
+
+            // Apply filters
+            if ($request->has('featured') && $request->featured == 'true') {
+                $query->featured();
+            }
+
+            // By default, only show parent categories unless explicitly requested
+            if (!$request->has('parent_only') || $request->parent_only !== 'false') {
+                $query->parent();
+            }
+
+            // Sorting
+            $sortBy = $request->get('sort_by', 'name');
+            $sortOrder = $request->get('sort_order', 'asc');
+            $query->orderBy($sortBy, $sortOrder);
+
+            $categories = $query->get();
+
+            // Transform the data to include full_image_url
+            $transformedCategories = $categories->map(function ($category) {
+                $data = [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'slug' => $category->slug,
+                    'full_image_url' => $category->icon ? url($category->icon) : ($category->image_url ? url($category->image_url) : null),
+                    'meta_title' => $category->meta_title,
+                    'meta_description' => $category->meta_description,
+                    'meta_keywords' => $category->meta_keywords,
+                ];
+
+                // Transform children with same structure
+                if ($category->children && $category->children->count() > 0) {
+                    $data['children'] = $category->children->map(function ($child) {
+                        return [
+                            'id' => $child->id,
+                            'name' => $child->name,
+                            'slug' => $child->slug,
+                            'full_image_url' => $child->icon ? url($child->icon) : ($child->image_url ? url($child->image_url) : null),
+                            'meta_title' => $child->meta_title,
+                            'meta_description' => $child->meta_description,
+                            'meta_keywords' => $child->meta_keywords,
+                        ];
+                    });
+                }
+
+                return $data;
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $transformedCategories
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch customer categories',
                 'error' => $e->getMessage()
             ], 500);
         }
