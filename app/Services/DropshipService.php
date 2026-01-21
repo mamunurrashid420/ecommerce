@@ -95,7 +95,7 @@ class DropshipService
     /**
      * Search products by image URL
      */
-    public function searchByImage(string $platform, string $imageUrl, int $page = 1, int $pageSize = 20, string $lang = 'en', array $options = []): array
+    public function searchByImage(string $platform, string $imageUrl, int $page = 1, int $pageSize = 20, string $lang = 'en', array $options = [])
     {
         $params = [
             'apiToken' => $this->apiToken,
@@ -131,7 +131,7 @@ class DropshipService
         }
 
         // Use multi-language endpoint for non-Chinese languages
-        $endpoint = $lang === 'en' ? 'en/search/items_by_img' : 'search/items_by_img';
+        $endpoint = 'global/search/image/v2';
 
         return $this->makeRequest($platform, $endpoint, $params);
     }
