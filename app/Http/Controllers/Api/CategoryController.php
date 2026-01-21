@@ -320,10 +320,11 @@ class CategoryController extends Controller
             ];
 
             // Add icon validation only if file is present
+            // Using 'file' instead of 'image' to support SVG files
             if ($hasIconFile) {
-                $validationRules['icon'] = 'required|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
+                $validationRules['icon'] = 'required|file|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
             } else {
-                $validationRules['icon'] = 'nullable|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
+                $validationRules['icon'] = 'nullable|file|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
             }
 
             $validator = Validator::make($request->all(), $validationRules);
@@ -509,8 +510,9 @@ class CategoryController extends Controller
             ];
 
             // Add icon validation only if file is present, otherwise skip icon validation entirely
+            // Using 'file' instead of 'image' to support SVG files
             if ($hasIconFile) {
-                $validationRules['icon'] = 'required|image|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
+                $validationRules['icon'] = 'required|file|mimes:jpeg,png,jpg,gif,webp,svg|max:2048';
             }
             // If no file is uploaded and icon field contains a string path, don't validate it as an image
 

@@ -201,34 +201,35 @@ class SiteSettingController extends Controller
             }
 
             // Add conditional validation for logo fields
-            // Only validate as image if it's actually a file upload, ignore if it's a string (existing path)
+            // Only validate as file if it's actually a file upload, ignore if it's a string (existing path)
+            // Using 'file' instead of 'image' to support SVG files
             if ($request->hasFile('header_logo')) {
-                $rules['header_logo'] = 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+                $rules['header_logo'] = 'nullable|file|mimes:jpeg,png,jpg,gif,svg,webp|max:2048';
             } elseif ($request->has('header_logo') && is_string($request->header_logo)) {
                 $rules['header_logo'] = 'nullable|string';
             }
 
             if ($request->hasFile('footer_logo')) {
-                $rules['footer_logo'] = 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+                $rules['footer_logo'] = 'nullable|file|mimes:jpeg,png,jpg,gif,svg,webp|max:2048';
             } elseif ($request->has('footer_logo') && is_string($request->footer_logo)) {
                 $rules['footer_logo'] = 'nullable|string';
             }
 
             if ($request->hasFile('favicon')) {
-                $rules['favicon'] = 'nullable|image|mimes:ico,png|max:1024';
+                $rules['favicon'] = 'nullable|file|mimes:ico,png,svg|max:1024';
             } elseif ($request->has('favicon') && is_string($request->favicon)) {
                 $rules['favicon'] = 'nullable|string';
             }
 
             // Validation for promotional image upload
             if ($request->hasFile('promotional_image')) {
-                $rules['promotional_image'] = 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+                $rules['promotional_image'] = 'nullable|file|mimes:jpeg,png,jpg,gif,svg,webp|max:2048';
             }
 
             // Validation for promotional item images
             if ($request->hasFile('promotional_item_images')) {
                 $rules['promotional_item_images'] = 'nullable|array|max:3';
-                $rules['promotional_item_images.*'] = 'image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+                $rules['promotional_item_images.*'] = 'file|mimes:jpeg,png,jpg,gif,svg,webp|max:2048';
                 $rules['promotional_item_urls'] = 'nullable|array';
                 $rules['promotional_item_urls.*'] = 'nullable|url|max:500';
             }
@@ -236,7 +237,7 @@ class SiteSettingController extends Controller
             // Validation for slider images
             if ($request->hasFile('slider_images')) {
                 $rules['slider_images'] = 'nullable|array';
-                $rules['slider_images.*'] = 'image|mimes:jpeg,png,jpg,gif,svg|max:2048';
+                $rules['slider_images.*'] = 'file|mimes:jpeg,png,jpg,gif,svg,webp|max:2048';
                 $rules['slider_titles'] = 'nullable|array';
                 $rules['slider_titles.*'] = 'nullable|string|max:255';
                 $rules['slider_subtitles'] = 'nullable|array';

@@ -66,7 +66,7 @@ class PaymentMethodController extends Controller
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255|unique:payment_methods,name',
                 'name_bn' => 'nullable|string|max:255',
-                'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
+                'logo' => 'nullable|file|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
                 'information' => 'nullable|array',
                 'information.*.label_name' => 'required|string|max:255',
                 'information.*.label_value' => 'required|string|max:500',
@@ -151,7 +151,7 @@ class PaymentMethodController extends Controller
             $validator = Validator::make($request->all(), [
                 'name' => 'sometimes|required|string|max:255|unique:payment_methods,name,' . $id,
                 'name_bn' => 'nullable|string|max:255',
-                'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
+                'logo' => 'nullable|file|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
                 'information' => 'nullable|array',
                 'information.*.label_name' => 'required|string|max:255',
                 'information.*.label_value' => 'required|string|max:500',
