@@ -167,10 +167,38 @@ class SiteSettingController extends Controller
                 'offer.promotional_image' => 'nullable|string',
                 'offer.start_date' => 'nullable|date',
                 'offer.end_date' => 'nullable|date|after:offer.start_date',
-                'promotional_items' => 'nullable|array|max:3',
-                'promotional_items.*.image' => 'nullable|string',
-                'promotional_items.*.url' => 'nullable|url|max:500',
             ];
+
+            // Add conditional validation for promotional_items
+            // Only validate as array if it's actually an array, skip if it's a string (will be normalized later)
+            if ($request->has('promotional_items')) {
+                $promotionalItems = $request->input('promotional_items');
+
+                // Normalize to ensure it's an array for validation
+                if (is_string($promotionalItems)) {
+                    $decoded = json_decode($promotionalItems, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $promotionalItems = $decoded;
+                        // Replace the request input with the decoded array for validation
+                        $request->merge(['promotional_items' => $promotionalItems]);
+                    } else {
+                        // If it's not valid JSON, skip validation for promotional_items
+                        // It will be handled as empty array in the processing logic
+                        $promotionalItems = null;
+                    }
+                }
+
+                // Only add validation rules if promotional_items is an array
+                if (is_array($promotionalItems)) {
+                    $rules['promotional_items'] = 'nullable|array|max:3';
+
+                    // Only add nested validation rules if array is not empty
+                    if (!empty($promotionalItems)) {
+                        $rules['promotional_items.*.image'] = 'nullable|string';
+                        $rules['promotional_items.*.url'] = 'nullable|url|max:500';
+                    }
+                }
+            }
 
             // Add conditional validation for logo fields
             // Only validate as image if it's actually a file upload, ignore if it's a string (existing path)
