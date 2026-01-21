@@ -273,7 +273,8 @@ class ProductController extends Controller
                 $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
     
                 // Public URL
-                $searchImageUrl = 'https://api.e3shopbd.com/storage/search-images/search_1769013758_697101fe769a2.png';  // Storage::disk('public')->url($uploadedImagePath);
+                $searchImageUrl = 'https://cbu01.alicdn.com/img/ibank/O1CN01eTBBTA1M6NYIDpIsc_!!2212975861385-0-cib.600x600.jpg'; 
+                // $searchImageUrl = 'https://api.e3shopbd.com/storage/search-images/search_1769013758_697101fe769a2.png';  // Storage::disk('public')->url($uploadedImagePath);
     
                 // $searchImageUrl = 'https://uaecommerce.s3.ap-southeast-1.amazonaws.com/uploads/search_1769013758_697101fe769a2.png'; 
                 Log::info('Image uploaded successfully', [

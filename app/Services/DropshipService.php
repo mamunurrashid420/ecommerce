@@ -130,8 +130,9 @@ class DropshipService
             $params['new_arrival'] = $options['new_arrival'];
         }
 
+        $params['language'] = $lang;
         // Use multi-language endpoint for non-Chinese languages
-        $endpoint = 'global/search/image/v2';
+        $endpoint = 'global/search/image';
 
         return $this->makeRequest($platform, $endpoint, $params);
     }

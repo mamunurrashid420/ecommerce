@@ -1,0 +1,394 @@
+{
+  "info": {
+    "name": "Support Ticket API",
+    "description": "Complete API collection for Support Ticket system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://api.e3shopbd.com",
+      "type": "string"
+    },
+    {
+      "key": "customer_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ticket_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "message_id",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Customer Endpoints",
+      "item": [
+        {
+          "name": "Create Support Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Issue with order #12345\",\n  \"description\": \"I received the wrong product in my order. I ordered a blue shirt but received a red one.\",\n  \"priority\": \"high\",\n  \"category\": \"order\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets"]
+            }
+          }
+        },
+        {
+          "name": "Get My Tickets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets?status=open&per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "open"
+                },
+                {
+                  "key": "per_page",
+                  "value": "15"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ticket Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/{{ticket_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "{{ticket_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Ticket Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/{{ticket_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "{{ticket_id}}", "messages"]
+            }
+          }
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Thank you for your help! When can I expect the replacement?\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/{{ticket_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "{{ticket_id}}", "messages"]
+            }
+          }
+        },
+        {
+          "name": "Get Navbar Count",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/navbar/count",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "navbar", "count"]
+            }
+          }
+        },
+        {
+          "name": "Get Navbar Latest",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/navbar/latest?limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "navbar", "latest"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Endpoints",
+      "item": [
+        {
+          "name": "Get All Tickets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets?status=open&priority=urgent&per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "open"
+                },
+                {
+                  "key": "priority",
+                  "value": "urgent"
+                },
+                {
+                  "key": "per_page",
+                  "value": "15"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ticket Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/{{ticket_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "{{ticket_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Ticket Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/{{ticket_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "{{ticket_id}}", "messages"]
+            }
+          }
+        },
+        {
+          "name": "Send Reply",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"I apologize for the inconvenience. We'll send you the correct product right away.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/{{ticket_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "{{ticket_id}}", "messages"]
+            }
+          }
+        },
+        {
+          "name": "Get Navbar Count",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/navbar/count",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "navbar", "count"]
+            }
+          }
+        },
+        {
+          "name": "Get Navbar Latest",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-tickets/navbar/latest?limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-tickets", "navbar", "latest"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shared Endpoints",
+      "item": [
+        {
+          "name": "Mark Message as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/support-messages/{{message_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support-messages", "{{message_id}}", "read"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Changed my mind about the purchase\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/orders/123/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders", "123", "cancel"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+
