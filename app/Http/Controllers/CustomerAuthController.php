@@ -66,11 +66,10 @@ class CustomerAuthController extends Controller
 
         if (!$customer) {
             // Create new customer with mobile number
-            // Provide default values for required fields (name, email, password)
+            // Provide default values for required fields (name, password)
             $customer = Customer::create([
                 'phone' => $request->mobile,
                 'name' => 'Customer', // Default name, can be updated later
-                'email' => 'customer_' . $request->mobile . '@temp.com', // Temporary email
                 'password' => Hash::make(Str::random(32)), // Random password (not used for OTP auth)
                 'role' => 'customer',
             ]);

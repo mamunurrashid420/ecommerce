@@ -306,24 +306,76 @@ class DropshipService
      * Convert non-Alibaba image URL to Alibaba-compatible URL for search
      * This uses TMAPI's image URL conversion endpoint
      */
-    public function convertImageUrlForSearch(string $imageUrl): array
+    public function convertImageUrlForSearch(string $imageUrl, string $searchApiEndpoint = '/search/image'): array
     {
-        $params = [
-            'apiToken' => $this->apiToken,
-            'img_url' => $imageUrl,
-        ];
-
-        // Use the image conversion endpoint
-        // Note: This endpoint may not exist in TMAPI, so we'll handle gracefully
         try {
-            $response = $this->makeRequest('1688', 'tools/convert_image', $params);
-            return $response;
+            $url = "{$this->baseUrl}/1688/tools/image/convert_url";
+
+            $response = Http::timeout(30)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($url, [
+                    'apiToken' => $this->apiToken,
+                    'url' => $imageUrl,
+                    'search_api_endpoint' => $searchApiEndpoint,
+                ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+
+                Log::info('Image URL conversion API response', [
+                    'url' => $url,
+                    'original_url' => $imageUrl,
+                    'response_data' => $data,
+                ]);
+
+                // Check for API-level errors
+                if (isset($data['code']) && $data['code'] !== 200) {
+                    Log::warning('Image URL conversion failed', [
+                        'error_code' => $data['code'],
+                        'message' => $data['msg'] ?? 'API error',
+                        'original_url' => $imageUrl,
+                        'full_response' => $data,
+                    ]);
+
+                    // Return original URL if conversion fails
+                    return [
+                        'success' => false,
+                        'error_code' => $data['code'],
+                        'message' => $data['msg'] ?? 'Image conversion failed',
+                        'data' => ['url' => $imageUrl],
+                    ];
+                }
+
+                return [
+                    'success' => true,
+                    'error_code' => 200,
+                    'message' => $data['msg'] ?? 'Success',
+                    'data' => $data['data'] ?? $data,
+                ];
+            }
+
+            // If HTTP request fails, return original URL
+            return [
+                'success' => false,
+                'error_code' => $response->status(),
+                'message' => 'HTTP request failed',
+                'data' => ['url' => $imageUrl],
+            ];
+
         } catch (\Exception $e) {
+            Log::error('Image URL conversion error', [
+                'error' => $e->getMessage(),
+                'original_url' => $imageUrl,
+            ]);
+
             // If conversion fails, return the original URL
             return [
-                'success' => true,
+                'success' => false,
+                'error_code' => 'EXCEPTION',
+                'message' => $e->getMessage(),
                 'data' => ['url' => $imageUrl],
-                'message' => 'Image conversion not available, using original URL',
             ];
         }
     }

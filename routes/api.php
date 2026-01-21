@@ -61,9 +61,9 @@ Route::get('/shop/{sellerId}/products', [DropshipShopController::class, 'product
 
 // Customer Authentication (Mobile OTP)
 Route::prefix('customer')->group(function () {
-    Route::post('/login', [CustomerAuthController::class, 'login']); // Send OTP to mobile
+    Route::post('/login', [CustomerAuthController::class, 'login'])->middleware('throttle:5,1'); // Send OTP to mobile - 5 requests per minute
     Route::post('/verify-otp', [CustomerAuthController::class, 'verifyOtp']); // Verify OTP and get token
-    
+
 });
 
 Route::get('/products', [ProductController::class, 'index']);

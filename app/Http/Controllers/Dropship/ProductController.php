@@ -239,7 +239,7 @@ class ProductController extends Controller
             'new_arrival' => 'nullable|boolean',
             'lang' => 'nullable|string|max:10',
         ]);
-    
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -247,36 +247,39 @@ class ProductController extends Controller
                 'errors' => $validator->errors(),
             ], 422);
         }
-    
+
         try {
             $uploadedImagePath = null;
             $absoluteFilePath = null;
             $searchImageUrl = null;
-    
+
             /* ================================
              | Upload image & generate URL
              |================================
              */
             if ($request->hasFile('image')) {
                 $imageFile = $request->file('image');
-    
+
                 $filename = 'search_' . time() . '_' . uniqid() . '.' . $imageFile->getClientOriginalExtension();
-    
+
                 // Save to storage/app/public/search-images
                 $uploadedImagePath = $imageFile->storeAs(
                     'search-images',
                     $filename,
                     'public'
                 );
-    
+
                 // Absolute path (server filesystem)
                 $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
-    
+
                 // Public URL
-                $searchImageUrl = 'https://cbu01.alicdn.com/img/ibank/O1CN01eTBBTA1M6NYIDpIsc_!!2212975861385-0-cib.600x600.jpg'; 
+                // $searchImageUrl = 'https://cbu01.alicdn.com/img/ibank/O1CN01eTBBTA1M6NYIDpIsc_!!2212975861385-0-cib.600x600.jpg';
                 // $searchImageUrl = 'https://api.e3shopbd.com/storage/search-images/search_1769013758_697101fe769a2.png';  // Storage::disk('public')->url($uploadedImagePath);
-    
-                // $searchImageUrl = 'https://uaecommerce.s3.ap-southeast-1.amazonaws.com/uploads/search_1769013758_697101fe769a2.png'; 
+
+                // Generate actual public URL from uploaded image
+                $searchImageUrl = Storage::disk('public')->url($uploadedImagePath);
+
+                // $searchImageUrl = 'https://uaecommerce.s3.ap-southeast-1.amazonaws.com/uploads/search_1769013758_697101fe769a2.png';
                 Log::info('Image uploaded successfully', [
                     'uploaded_path' => $uploadedImagePath,
                     'absolute_path' => $absoluteFilePath,
@@ -286,27 +289,103 @@ class ProductController extends Controller
                 ]);
             }
 
+            $page = $request->integer('page', 1);
+            $pageSize = $request->integer('page_size', 20);
+            $lang = $request->input('lang', 'en');
+
+            /* ================================
+             | Prepare image URL for search
+             |================================
+             */
+            // Check if URL is already an Alibaba CDN URL
+            $isAlibabaCdnUrl = str_contains($searchImageUrl, 'alicdn.com');
+
+            if ($isAlibabaCdnUrl) {
+                // Use Alibaba CDN URL directly
+                $convertedImageUrl = $searchImageUrl;
+                Log::info('Using Alibaba CDN URL directly', [
+                    'url' => $searchImageUrl,
+                ]);
+            } else {
+                // For non-Alibaba URLs, try to convert them
+                $conversionResult = $this->dropshipService->convertImageUrlForSearch(
+                    $searchImageUrl,
+                    '/global/search/image'
+                );
+
+                Log::info('Image URL conversion result', [
+                    'original_url' => $searchImageUrl,
+                    'conversion_result' => $conversionResult,
+                ]);
+
+                if ($conversionResult['success'] && isset($conversionResult['data']['image_url'])) {
+                    $convertedImageUrl = $conversionResult['data']['image_url'];
+                    Log::info('Image URL converted successfully', [
+                        'original_url' => $searchImageUrl,
+                        'converted_url' => $convertedImageUrl,
+                    ]);
+                } else {
+                    Log::warning('Image URL conversion failed, using original URL', [
+                        'original_url' => $searchImageUrl,
+                        'error' => $conversionResult['message'] ?? 'Unknown error',
+                        'full_result' => $conversionResult,
+                    ]);
+                    // Use original URL if conversion fails
+                    $convertedImageUrl = $searchImageUrl;
+                }
+            }
+
+            Log::info('Searching by image', [
+                'platform' => '1688',
+                'image_url' => $convertedImageUrl,
+                'page' => $page,
+                'page_size' => $pageSize,
+                'lang' => $lang,
+            ]);
+
             $result = $this->dropshipService->searchByImage(
                 '1688',
-                $searchImageUrl,
-                1,
-                20,
-                'en',
+                $convertedImageUrl,
+                $page,
+                $pageSize,
+                $lang,
                 []
             );
-        
-    
-            return response()->json([
-                'success' => true,
-                'message' => 'Image uploaded successfully',
-                'data' => $result
+
+            Log::info('Search by image result', [
+                'success' => $result['success'] ?? false,
+                'data_keys' => isset($result['data']) ? array_keys($result['data']) : [],
+                'total_count' => $result['data']['total_count'] ?? 0,
+                'items_count' => isset($result['data']['items']) ? count($result['data']['items']) : 0,
             ]);
-    
+
+            if (!$result['success']) {
+                return response()->json($result, 400);
+            }
+
+            // Transform response to match searchProducts API format
+            $products = $result['data'];
+
+            // Convert prices and currency for all items
+            $products = $this->convertProductListPrices($products);
+
+            return response()->json([
+                'result' => [
+                    'page' => $page,
+                    'per_page' => $pageSize,
+                    'products' => $products,
+                    'keywords' => [],
+                    'time' => now()->toIso8601String(),
+                    '_debug_discount_implementation' => 'v2.0',
+                ],
+                'image' => $convertedImageUrl,
+            ]);
+
         } catch (\Throwable $e) {
             Log::error('Image upload error', [
                 'error' => $e->getMessage(),
             ]);
-    
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload image',
