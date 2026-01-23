@@ -253,10 +253,6 @@ class ProductController extends Controller
             $absoluteFilePath = null;
             $searchImageUrl = null;
 
-            /* ================================
-             | Upload image & generate URL
-             |================================
-             */
             if ($request->hasFile('image')) {
                 $imageFile = $request->file('image');
 
@@ -269,17 +265,11 @@ class ProductController extends Controller
                     'public'
                 );
 
-                // Absolute path (server filesystem)
                 $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
 
-                // Public URL
-                // $searchImageUrl = 'https://cbu01.alicdn.com/img/ibank/O1CN01eTBBTA1M6NYIDpIsc_!!2212975861385-0-cib.600x600.jpg';
-                // $searchImageUrl = 'https://api.e3shopbd.com/storage/search-images/search_1769013758_697101fe769a2.png';  // Storage::disk('public')->url($uploadedImagePath);
 
-                // Generate actual public URL from uploaded image
                 $searchImageUrl = Storage::disk('public')->url($uploadedImagePath);
 
-                // $searchImageUrl = 'https://uaecommerce.s3.ap-southeast-1.amazonaws.com/uploads/search_1769013758_697101fe769a2.png';
                 Log::info('Image uploaded successfully', [
                     'uploaded_path' => $uploadedImagePath,
                     'absolute_path' => $absoluteFilePath,
@@ -293,11 +283,7 @@ class ProductController extends Controller
             $pageSize = $request->integer('page_size', 20);
             $lang = $request->input('lang', 'en');
 
-            /* ================================
-             | Prepare image URL for search
-             |================================
-             */
-            // Check if URL is already an Alibaba CDN URL
+  
             $isAlibabaCdnUrl = str_contains($searchImageUrl, 'alicdn.com');
 
             if ($isAlibabaCdnUrl) {
