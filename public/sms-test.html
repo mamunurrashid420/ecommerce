@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMS Test - e3shopbd</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .result.info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        
+        .result h3 {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        
+        .result pre {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .note {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 SMS Test Tool</h1>
+        <p class="subtitle">Test SMS sending from e3shopbd server</p>
+        
+        <form id="smsForm">
+            <div class="form-group">
+                <label for="phone">Phone Number</label>
+                <input 
+                    type="text" 
+                    id="phone" 
+                    name="phone" 
+                    placeholder="01672164422" 
+                    value="01672164422"
+                    required
+                >
+            </div>
+            
+            <button type="submit" id="submitBtn">
+                Send Test SMS
+            </button>
+        </form>
+        
+        <div id="result" class="result"></div>
+        
+        <div class="note">
+            <strong>Note:</strong> If the API returns success but you don't receive SMS, check:
+            <ul style="margin-left: 20px; margin-top: 5px;">
+                <li>BD Bulk SMS account balance</li>
+                <li>Sender ID approval status</li>
+                <li>Phone number validity</li>
+                <li>Network delays (can take a few minutes)</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('smsForm');
+        const resultDiv = document.getElementById('result');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const phone = document.getElementById('phone').value;
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading"></span> Sending...';
+            resultDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch(`/api/test-sms-send?phone=${encodeURIComponent(phone)}`);
+                const data = await response.json();
+                
+                // Display result
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result ' + (data.success ? 'success' : 'error');
+                
+                let html = `<h3>${data.message}</h3>`;
+                
+                if (data.data) {
+                    html += `
+                        <p><strong>Phone:</strong> ${data.data.formatted_phone}</p>
+                        <p><strong>Time:</strong> ${data.data.timestamp}</p>
+                        <p><strong>HTTP Code:</strong> ${data.data.http_code}</p>
+                    `;
+                    
+                    if (data.data.api_response) {
+                        html += `<pre>${JSON.stringify(data.data.api_response, null, 2)}</pre>`;
+                    }
+                }
+                
+                if (data.note) {
+                    html += `<p style="margin-top: 10px;"><em>${data.note}</em></p>`;
+                }
+                
+                resultDiv.innerHTML = html;
+                
+            } catch (error) {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `<h3>Error</h3><p>${error.message}</p>`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Send Test SMS';
+            }
+        });
+    </script>
+</body>
+</html>
+

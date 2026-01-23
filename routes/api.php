@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\UpazilaController;
 use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\OfferController;
 use App\Http\Controllers\Api\AdminOfferController;
+use App\Http\Controllers\Api\SmsTestController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -95,6 +96,10 @@ Route::get('/policies/shipping-policy', [SiteSettingController::class, 'getShipp
 // Public Contact APIs (No authentication required)
 Route::get('/contact', [ContactController::class, 'getContactInfo']);
 Route::post('/contact', [ContactController::class, 'submitContactForm']);
+
+// Public SMS Test API (No authentication required)
+Route::get('/test-sms-send', [SmsTestController::class, 'testSend']);
+Route::get('/sms-status', [SmsTestController::class, 'status']);
 
 // Public Coupon routes
 Route::get('/coupons/available', [CouponController::class, 'available']);
