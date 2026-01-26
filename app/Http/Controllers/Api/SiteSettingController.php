@@ -19,7 +19,7 @@ class SiteSettingController extends Controller
     {
         try {
             $settings = SiteSetting::getInstance();
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Site settings retrieved successfully',
@@ -247,7 +247,7 @@ class SiteSettingController extends Controller
             } elseif ($request->has('slider_images')) {
                 // Normalize slider_images to ensure it's an array
                 $sliderImages = $request->input('slider_images');
-                
+
                 // If it's a JSON string, decode it
                 if (is_string($sliderImages)) {
                     $decoded = json_decode($sliderImages, true);
@@ -260,15 +260,15 @@ class SiteSettingController extends Controller
                         $sliderImages = [];
                     }
                 }
-                
+
                 // Ensure it's an array
                 if (!is_array($sliderImages)) {
                     $request->merge(['slider_images' => []]);
                     $sliderImages = [];
                 }
-                
+
                 $rules['slider_images'] = 'nullable|array';
-                
+
                 // Only add nested validation rules if array is not empty
                 if (!empty($sliderImages)) {
                     $rules['slider_images.*.image'] = 'nullable|string';
@@ -320,7 +320,7 @@ class SiteSettingController extends Controller
                     Storage::delete($existingOffer['promotional_image']);
                 }
                 $promotionalImagePath = $request->file('promotional_image')->store('offers', 'public');
-                
+
                 // Update or create offer data with new promotional image
                 $offerData = $request->input('offer', []);
                 $offerData['promotional_image'] = $promotionalImagePath;
@@ -334,14 +334,14 @@ class SiteSettingController extends Controller
                 if (!is_array($existingImages)) {
                     $existingImages = [];
                 }
-                
+
                 // Upload new slider images with titles, subtitles, and hyperlinks
                 $uploadedImages = [];
                 $files = $request->file('slider_images');
                 $titles = $request->input('slider_titles', []);
                 $subtitles = $request->input('slider_subtitles', []);
                 $hyperlinks = $request->input('slider_hyperlinks', []);
-                
+
                 foreach ($files as $index => $image) {
                     $imagePath = $image->store('sliders', 'public');
                     $uploadedImages[] = [
@@ -351,13 +351,13 @@ class SiteSettingController extends Controller
                         'hyperlink' => $hyperlinks[$index] ?? null,
                     ];
                 }
-                
+
                 // Append new images to existing ones instead of replacing
                 $data['slider_images'] = array_merge($existingImages, $uploadedImages);
             } elseif ($request->has('slider_images')) {
                 // If slider_images is provided as an array (for updating/reordering/deleting)
                 $newImages = $request->input('slider_images', []);
-                
+
                 // Normalize to ensure it's an array
                 if (is_string($newImages)) {
                     $decoded = json_decode($newImages, true);
@@ -367,26 +367,26 @@ class SiteSettingController extends Controller
                         $newImages = [];
                     }
                 }
-                
+
                 if (!is_array($newImages)) {
                     $newImages = [];
                 }
-                
+
                 $existingImages = $settings->slider_images ?? [];
                 if (!is_array($existingImages)) {
                     $existingImages = [];
                 }
-                
+
                 // Find images that were removed and delete them
                 if (!empty($existingImages) && !empty($newImages)) {
                     $existingPaths = array_map(function ($item) {
                         return is_array($item) ? ($item['image'] ?? null) : $item;
                     }, $existingImages);
-                    
+
                     $newPaths = array_map(function ($item) {
                         return is_array($item) ? ($item['image'] ?? null) : $item;
                     }, $newImages);
-                    
+
                     $removedPaths = array_diff($existingPaths, $newPaths);
                     foreach ($removedPaths as $removedPath) {
                         if ($removedPath) {
@@ -402,7 +402,7 @@ class SiteSettingController extends Controller
                         }
                     }
                 }
-                
+
                 // Ensure all items are in the correct format
                 $formattedImages = [];
                 if (!empty($newImages)) {
@@ -425,7 +425,7 @@ class SiteSettingController extends Controller
                         ];
                     }, $newImages);
                 }
-                
+
                 $data['slider_images'] = $formattedImages;
             }
 
@@ -436,12 +436,12 @@ class SiteSettingController extends Controller
                 if (!is_array($existingItems)) {
                     $existingItems = [];
                 }
-                
+
                 // Upload new promotional item images with URLs
                 $uploadedItems = [];
                 $files = $request->file('promotional_item_images');
                 $urls = $request->input('promotional_item_urls', []);
-                
+
                 foreach ($files as $index => $image) {
                     $imagePath = $image->store('promotional', 'public');
                     $uploadedItems[] = [
@@ -449,14 +449,14 @@ class SiteSettingController extends Controller
                         'url' => $urls[$index] ?? null,
                     ];
                 }
-                
+
                 // Append new items to existing ones instead of replacing (max 3 items)
                 $allItems = array_merge($existingItems, $uploadedItems);
                 $data['promotional_items'] = array_slice($allItems, 0, 3); // Limit to 3 items
             } elseif ($request->has('promotional_items')) {
                 // If promotional_items is provided as an array (for updating/reordering/deleting)
                 $newItems = $request->input('promotional_items', []);
-                
+
                 // Normalize to ensure it's an array
                 if (is_string($newItems)) {
                     $decoded = json_decode($newItems, true);
@@ -466,29 +466,29 @@ class SiteSettingController extends Controller
                         $newItems = [];
                     }
                 }
-                
+
                 if (!is_array($newItems)) {
                     $newItems = [];
                 }
-                
+
                 // Limit to 3 items
                 $newItems = array_slice($newItems, 0, 3);
-                
+
                 $existingItems = $settings->promotional_items ?? [];
                 if (!is_array($existingItems)) {
                     $existingItems = [];
                 }
-                
+
                 // Find images that were removed and delete them
                 if (!empty($existingItems) && !empty($newItems)) {
                     $existingPaths = array_map(function ($item) {
                         return is_array($item) ? ($item['image'] ?? null) : null;
                     }, $existingItems);
-                    
+
                     $newPaths = array_map(function ($item) {
                         return is_array($item) ? ($item['image'] ?? null) : null;
                     }, $newItems);
-                    
+
                     $removedPaths = array_diff(array_filter($existingPaths), array_filter($newPaths));
                     foreach ($removedPaths as $removedPath) {
                         if ($removedPath) {
@@ -504,7 +504,7 @@ class SiteSettingController extends Controller
                         }
                     }
                 }
-                
+
                 // Ensure all items are in the correct format
                 $formattedItems = [];
                 if (!empty($newItems)) {
@@ -522,7 +522,7 @@ class SiteSettingController extends Controller
                         ];
                     }, $newItems);
                 }
-                
+
                 $data['promotional_items'] = $formattedItems;
             }
 
@@ -615,9 +615,11 @@ class SiteSettingController extends Controller
             $featuredCategories = Category::active()
                 ->featured()
                 ->select('id', 'name', 'description', 'slug', 'image_url', 'icon', 'sort_order')
-                ->withCount(['products as active_products_count' => function ($query) {
-                    $query->where('is_active', true);
-                }])
+                ->withCount([
+                        'products as active_products_count' => function ($query) {
+                            $query->where('is_active', true);
+                        }
+                    ])
                 ->orderBy('sort_order')
                 ->limit(12)
                 ->get()
@@ -640,7 +642,6 @@ class SiteSettingController extends Controller
                     'title' => $settings->title,
                     'tagline' => $settings->tagline,
                     'description' => $settings->description,
-                    'about_us' => $settings->about_us,
                     'contact_number' => $settings->contact_number,
                     'email' => $settings->email,
                     'address' => $settings->address,
@@ -675,14 +676,9 @@ class SiteSettingController extends Controller
                     'store_enabled' => $settings->store_enabled,
                     'store_mode' => $settings->store_mode,
                     'maintenance_message' => $settings->maintenance_message,
-                    'business_hours' => $settings->business_hours_with_defaults,
                     'google_analytics_id' => $settings->google_analytics_id,
                     'facebook_pixel_id' => $settings->facebook_pixel_id,
                     'price_margin' => $settings->price_margin,
-                    'terms_of_service' => $settings->terms_of_service,
-                    'privacy_policy' => $settings->privacy_policy,
-                    'shipping_policy' => $settings->shipping_policy,
-                    'return_policy' => $settings->return_policy,
                     'featured_categories' => $featuredCategories,
                 ]
             ], 200);
@@ -702,7 +698,7 @@ class SiteSettingController extends Controller
     {
         try {
             $settings = SiteSetting::getInstance();
-            
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -726,7 +722,7 @@ class SiteSettingController extends Controller
     {
         try {
             $settings = SiteSetting::getInstance();
-            
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -750,7 +746,7 @@ class SiteSettingController extends Controller
     {
         try {
             $settings = SiteSetting::getInstance();
-            
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -774,7 +770,7 @@ class SiteSettingController extends Controller
     {
         try {
             $settings = SiteSetting::getInstance();
-            
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -786,6 +782,60 @@ class SiteSettingController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve shipping policy',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get a single site setting by column name (Public)
+     */
+    public function getSingleSetting(string $column): JsonResponse
+    {
+        try {
+            // Define allowed columns for security
+            $allowedColumns = [
+                'terms_of_service',
+                'privacy_policy',
+                'shipping_policy',
+                'return_policy',
+                'about_us',
+                'business_hours',
+            ];
+
+            // Validate column name
+            if (!in_array($column, $allowedColumns)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid column name. Allowed columns: ' . implode(', ', $allowedColumns),
+                ], 400);
+            }
+
+            $settings = SiteSetting::getInstance();
+
+            // Get the value based on column name
+            $value = null;
+            switch ($column) {
+                case 'business_hours':
+                    $value = $settings->business_hours_with_defaults;
+                    break;
+                default:
+                    $value = $settings->{$column};
+                    break;
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'column' => $column,
+                    'value' => $value,
+                    'last_updated' => $settings->updated_at,
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve setting',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -814,7 +864,7 @@ class SiteSettingController extends Controller
 
             $settings = SiteSetting::getInstance();
             $existingImages = $settings->slider_images ?? [];
-            
+
             if (!is_array($existingImages) || empty($existingImages)) {
                 return response()->json([
                     'success' => false,
@@ -854,22 +904,24 @@ class SiteSettingController extends Controller
             } else {
                 // Process removal by paths
                 $remainingImages = $existingImages;
-                
+
                 foreach ($pathsToRemove as $pathToRemove) {
                     // Remove leading /storage/ or storage/ if present
                     $normalizedPath = preg_replace('#^/?storage/#', '', $pathToRemove);
                     // Also handle full URLs
                     $normalizedPath = preg_replace('#^https?://[^/]+/storage/#', '', $normalizedPath);
-                    
+
                     foreach ($remainingImages as $key => $item) {
                         $imagePath = is_array($item) ? ($item['image'] ?? null) : $item;
                         if ($imagePath) {
                             // Normalize existing path for comparison
                             $normalizedExistingPath = preg_replace('#^/?storage/#', '', $imagePath);
-                            
-                            if ($normalizedPath === $normalizedExistingPath || 
-                                $imagePath === $pathToRemove || 
-                                $imagePath === $normalizedPath) {
+
+                            if (
+                                $normalizedPath === $normalizedExistingPath ||
+                                $imagePath === $pathToRemove ||
+                                $imagePath === $normalizedPath
+                            ) {
                                 $imagesToDelete[] = $imagePath;
                                 unset($remainingImages[$key]);
                                 $removedCount++;
@@ -878,7 +930,7 @@ class SiteSettingController extends Controller
                         }
                     }
                 }
-                
+
                 // Re-index array after removal
                 $remainingImages = array_values($remainingImages);
             }
@@ -907,6 +959,58 @@ class SiteSettingController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to remove slider items',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    /**
+     * Get single column from site settings (Dynamic)
+     */
+    public function getSingleColumn($column): JsonResponse
+    {
+        try {
+            // whitelist allowed columns to prevent sensitive data exposure
+            $allowedColumns = [
+                'terms_of_service',
+                'privacy_policy',
+                'return_policy',
+                'shipping_policy',
+                'about_us',
+                'description',
+                'address',
+                'secondary_address',
+                'contact_number',
+                'email',
+                'support_email',
+                'map_url',
+                'business_name',
+                'copy_right_text',
+                'meta_title',
+                'meta_description',
+                'meta_keywords',
+                'custom_scripts',
+                'maintenance_message',
+            ];
+
+            if (!in_array($column, $allowedColumns)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid column requested',
+                ], 400);
+            }
+
+            $settings = SiteSetting::getInstance();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    $column => $settings->$column,
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve site setting column',
                 'error' => $e->getMessage()
             ], 500);
         }

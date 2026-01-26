@@ -85,6 +85,10 @@ Route::prefix('landing')->group(function () {
 
 // Public site settings (for frontend)
 Route::get('/site-settings/public', [SiteSettingController::class, 'public']);
+Route::get('/site-settings/column/{column}', [SiteSettingController::class, 'getSingleColumn']);
+
+// Public single site setting by column name (No authentication required)
+Route::get('/site-settings/single/{column}', [SiteSettingController::class, 'getSingleSetting']);
 
 // Public Policy Documents (No authentication required)
 Route::get('/policies/terms-of-service', [SiteSettingController::class, 'getTermsOfService']);
@@ -204,7 +208,7 @@ Route::middleware('customer')->prefix('customer')->group(function () {
         Route::get('/order-status-breakdown', [CustomerDashboardController::class, 'orderStatusBreakdown']);
         Route::get('/spending-trend', [CustomerDashboardController::class, 'spendingTrend']);
     });
-    
+
 });
 
 // Order routes - allow both customers and admins
