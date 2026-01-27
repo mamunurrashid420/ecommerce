@@ -289,17 +289,23 @@ class ProductController extends Controller
             $pageSize = $request->integer('page_size', 20);
             $lang = $request->input('lang', 'en');
 
-  
+            // Check if URL is from Alibaba CDN or local/internal domain
             $isAlibabaCdnUrl = str_contains($searchImageUrl, 'alicdn.com');
+            $appUrl = config('app.url', 'http://localhost');
+            $appHost = parse_url($appUrl, PHP_URL_HOST);
+            $imageHost = parse_url($searchImageUrl, PHP_URL_HOST);
+            $isLocalUrl = $imageHost && ($imageHost === $appHost || str_ends_with($imageHost, '.' . $appHost) || str_ends_with($appHost, '.' . $imageHost));
 
-            if ($isAlibabaCdnUrl) {
-                // Use Alibaba CDN URL directly
+            if ($isAlibabaCdnUrl || $isLocalUrl) {
+                // Use URL directly for Alibaba CDN or local URLs (external API can't access local URLs)
                 $convertedImageUrl = $searchImageUrl;
-                Log::info('Using Alibaba CDN URL directly', [
+                Log::info('Using URL directly (Alibaba CDN or local)', [
                     'url' => $searchImageUrl,
+                    'is_alibaba' => $isAlibabaCdnUrl,
+                    'is_local' => $isLocalUrl,
                 ]);
             } else {
-                // For non-Alibaba URLs, try to convert them
+                // For non-Alibaba, non-local URLs, try to convert them
                 $conversionResult = $this->dropshipService->convertImageUrlForSearch(
                     $searchImageUrl,
                     '/global/search/image'

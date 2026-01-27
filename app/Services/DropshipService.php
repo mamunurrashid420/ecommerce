@@ -356,11 +356,36 @@ class DropshipService
                 ];
             }
 
+            // If HTTP request fails, log detailed error information
+            $statusCode = $response->status();
+            $responseBody = $response->body();
+            $responseData = null;
+            
+            try {
+                $responseData = $response->json();
+            } catch (\Exception $e) {
+                // Response is not JSON, use raw body
+            }
+
+            Log::warning('Image URL conversion HTTP request failed', [
+                'status_code' => $statusCode,
+                'original_url' => $imageUrl,
+                'api_url' => $url,
+                'response_body' => $responseBody,
+                'response_data' => $responseData,
+            ]);
+
+            // Extract error message from response if available
+            $errorMessage = 'HTTP request failed';
+            if ($responseData) {
+                $errorMessage = $responseData['msg'] ?? $responseData['message'] ?? $errorMessage;
+            }
+
             // If HTTP request fails, return original URL
             return [
                 'success' => false,
-                'error_code' => $response->status(),
-                'message' => 'HTTP request failed',
+                'error_code' => $statusCode,
+                'message' => $errorMessage,
                 'data' => ['url' => $imageUrl],
             ];
 
