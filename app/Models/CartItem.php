@@ -12,6 +12,7 @@ class CartItem extends Model
         'product_code',
         'product_name',
         'product_price',
+        'original_price',
         'product_image',
         'product_sku',
         'quantity',
@@ -21,6 +22,7 @@ class CartItem extends Model
 
     protected $casts = [
         'product_price' => 'decimal:2',
+        'original_price' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'quantity' => 'integer',
         'variations' => 'array',

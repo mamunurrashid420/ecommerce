@@ -44,9 +44,18 @@ class CartController extends Controller
                         'total_items' => 0,
                         'subtotal' => 0,
                         'total' => 0,
+                        'discount_applied' => false,
+                        'discount_percentage' => null,
+                        'discount_amount' => 0,
+                        'original_subtotal' => 0,
                     ]
                 ]);
             }
+
+            // Apply discount and recalculate totals
+            $this->applyCartDiscount($cart);
+            $cart->load('items');
+            $totals = $this->calculateCartTotals($cart);
 
             return response()->json([
                 'success' => true,
@@ -67,9 +76,13 @@ class CartController extends Controller
                             'variations' => $item->variations,
                         ];
                     }),
-                    'total_items' => $cart->total_items,
-                    'subtotal' => $cart->total,
-                    'total' => $cart->total,
+                    'total_items' => $totals['total_items'],
+                    'subtotal' => $totals['subtotal'],
+                    'total' => $totals['total'],
+                    'discount_applied' => $totals['discount_applied'],
+                    'discount_percentage' => $totals['discount_percentage'],
+                    'discount_amount' => $totals['discount_amount'],
+                    'original_subtotal' => $totals['original_subtotal'],
                 ]
             ]);
 
@@ -325,11 +338,17 @@ class CartController extends Controller
                     }
 
                     // Update price if variant price is available (for dropship products)
-                    if ($isDropshipProduct && $variantPrice != $cartItem->product_price) {
+                    if ($isDropshipProduct && $variantPrice != ($cartItem->original_price ?? $cartItem->product_price)) {
+                        // Update both original and current price
+                        $cartItem->original_price = $variantPrice;
                         $cartItem->product_price = $variantPrice;
+                    } elseif ($cartItem->original_price === null) {
+                        // Store original price if not set
+                        $cartItem->original_price = $cartItem->product_price;
                     }
 
                     $cartItem->quantity = $newQuantity;
+                    // Recalculate subtotal based on current price (discount will be applied later)
                     $cartItem->subtotal = $newQuantity * $cartItem->product_price;
 
                     // Update variation data in stored JSON
@@ -364,6 +383,7 @@ class CartController extends Controller
                         'product_code' => $productCode,
                         'product_name' => $productName,
                         'product_price' => $variantPrice, // Use variant-specific price
+                        'original_price' => $variantPrice, // Store original price
                         'product_image' => $productImage,
                         'product_sku' => $productSku,
                         'quantity' => $variation['quantity'],
@@ -387,18 +407,46 @@ class CartController extends Controller
 
             DB::commit();
 
-            // Reload cart with items
+            // Reload cart with items and apply discount
             $cart->load('items');
+            $this->applyCartDiscount($cart);
+            $cart->load('items');
+            
+            // Recalculate totals with discount
+            $totals = $this->calculateCartTotals($cart);
+            
+            // Update added items with discounted prices
+            $updatedAddedItems = [];
+            foreach ($addedItems as $addedItem) {
+                $cartItem = $cart->items->find($addedItem['id']);
+                if ($cartItem) {
+                    $updatedAddedItems[] = [
+                        'id' => $cartItem->id,
+                        'product_id' => $cartItem->product_id,
+                        'product_code' => $cartItem->product_code,
+                        'product_name' => $cartItem->product_name,
+                        'product_price' => $cartItem->product_price,
+                        'product_image_url' => $cartItem->product_image_url,
+                        'quantity' => $cartItem->quantity,
+                        'subtotal' => $cartItem->subtotal,
+                        'variations' => $cartItem->variations,
+                    ];
+                }
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Items added to cart successfully',
                 'data' => [
                     'cart_id' => $cart->id,
-                    'items' => $addedItems,
-                    'total_items' => $cart->total_items,
-                    'subtotal' => $cart->total,
-                    'total' => $cart->total,
+                    'items' => $updatedAddedItems,
+                    'total_items' => $totals['total_items'],
+                    'subtotal' => $totals['subtotal'],
+                    'total' => $totals['total'],
+                    'discount_applied' => $totals['discount_applied'],
+                    'discount_percentage' => $totals['discount_percentage'],
+                    'discount_amount' => $totals['discount_amount'],
+                    'original_subtotal' => $totals['original_subtotal'],
                 ]
             ], 201);
 
@@ -500,6 +548,7 @@ class CartController extends Controller
                         'product_code' => null,
                         'product_name' => $product->name,
                         'product_price' => $product->price,
+                        'original_price' => $product->price, // Store original price
                         'product_image' => $product->image_url,
                         'product_sku' => $product->sku,
                         'quantity' => $request->quantity,
@@ -526,6 +575,7 @@ class CartController extends Controller
                         'product_code' => $request->product_code,
                         'product_name' => $request->product_name,
                         'product_price' => $request->product_price,
+                        'original_price' => $request->product_price, // Store original price
                         'product_image' => $request->product_image,
                         'product_sku' => $request->product_sku,
                         'quantity' => $request->quantity,
@@ -536,8 +586,16 @@ class CartController extends Controller
 
             DB::commit();
 
-            // Reload cart with items
+            // Reload cart with items and apply discount
             $cart->load('items');
+            $this->applyCartDiscount($cart);
+            $cart->load('items');
+            
+            // Recalculate totals with discount
+            $totals = $this->calculateCartTotals($cart);
+            
+            // Reload cart item to get updated price
+            $cartItem->refresh();
 
             return response()->json([
                 'success' => true,
@@ -554,8 +612,13 @@ class CartController extends Controller
                         'quantity' => $cartItem->quantity,
                         'subtotal' => $cartItem->subtotal,
                     ],
-                    'total_items' => $cart->total_items,
-                    'total' => $cart->total,
+                    'total_items' => $totals['total_items'],
+                    'subtotal' => $totals['subtotal'],
+                    'total' => $totals['total'],
+                    'discount_applied' => $totals['discount_applied'],
+                    'discount_percentage' => $totals['discount_percentage'],
+                    'discount_amount' => $totals['discount_amount'],
+                    'original_subtotal' => $totals['original_subtotal'],
                 ]
             ], 201);
 
@@ -608,14 +671,27 @@ class CartController extends Controller
                 }
             }
 
+            // Store original price if not set
+            if ($cartItem->original_price === null) {
+                $cartItem->original_price = $cartItem->product_price;
+            }
+            
             // Update quantity and subtotal
             $cartItem->quantity = $request->quantity;
             $cartItem->subtotal = $request->quantity * $cartItem->product_price;
             $cartItem->save();
 
-            // Reload cart
+            // Reload cart and apply discount
             $cart = $cartItem->cart;
             $cart->load('items');
+            $this->applyCartDiscount($cart);
+            $cart->load('items');
+            
+            // Recalculate totals with discount
+            $totals = $this->calculateCartTotals($cart);
+            
+            // Reload cart item to get updated price
+            $cartItem->refresh();
 
             return response()->json([
                 'success' => true,
@@ -626,11 +702,17 @@ class CartController extends Controller
                         'product_id' => $cartItem->product_id,
                         'product_code' => $cartItem->product_code,
                         'product_name' => $cartItem->product_name,
+                        'product_price' => $cartItem->product_price,
                         'quantity' => $cartItem->quantity,
                         'subtotal' => $cartItem->subtotal,
                     ],
-                    'total_items' => $cart->total_items,
-                    'total' => $cart->total,
+                    'total_items' => $totals['total_items'],
+                    'subtotal' => $totals['subtotal'],
+                    'total' => $totals['total'],
+                    'discount_applied' => $totals['discount_applied'],
+                    'discount_percentage' => $totals['discount_percentage'],
+                    'discount_amount' => $totals['discount_amount'],
+                    'original_subtotal' => $totals['original_subtotal'],
                 ]
             ]);
 
@@ -660,15 +742,25 @@ class CartController extends Controller
             $cart = $cartItem->cart;
             $cartItem->delete();
 
-            // Reload cart
+            // Reload cart and apply discount
             $cart->load('items');
+            $this->applyCartDiscount($cart);
+            $cart->load('items');
+            
+            // Recalculate totals with discount
+            $totals = $this->calculateCartTotals($cart);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Item removed from cart successfully',
                 'data' => [
-                    'total_items' => $cart->total_items,
-                    'total' => $cart->total,
+                    'total_items' => $totals['total_items'],
+                    'subtotal' => $totals['subtotal'],
+                    'total' => $totals['total'],
+                    'discount_applied' => $totals['discount_applied'],
+                    'discount_percentage' => $totals['discount_percentage'],
+                    'discount_amount' => $totals['discount_amount'],
+                    'original_subtotal' => $totals['original_subtotal'],
                 ]
             ]);
 
@@ -708,6 +800,107 @@ class CartController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Apply discount to cart items based on site settings
+     */
+    private function applyCartDiscount(Cart $cart): void
+    {
+        $settings = SiteSetting::getInstance();
+        $minItemNumber = $settings->min_item_number_discount ?? null;
+        $discountPercentage = $settings->discount_percentage_on_item ?? null;
+
+        // If discount settings are not configured, skip
+        if ($minItemNumber === null || $discountPercentage === null || $discountPercentage <= 0) {
+            // If discount no longer applies, restore original prices
+            $this->restoreOriginalPrices($cart);
+            return;
+        }
+
+        // Get total items in cart
+        $totalItems = $cart->items->sum('quantity');
+
+        // Check if cart meets minimum item requirement for discount
+        if ($totalItems >= $minItemNumber) {
+            // Apply discount to all cart items
+            foreach ($cart->items as $item) {
+                // Store original price if not already stored
+                if ($item->original_price === null) {
+                    $item->original_price = $item->product_price;
+                }
+                
+                // Calculate discounted price from original price
+                $discountedPrice = $item->original_price * (1 - ($discountPercentage / 100));
+                
+                // Update the item price and recalculate subtotal
+                $item->product_price = round($discountedPrice, 2);
+                $item->subtotal = round($item->quantity * $discountedPrice, 2);
+                $item->save();
+            }
+        } else {
+            // Cart doesn't meet minimum, restore original prices
+            $this->restoreOriginalPrices($cart);
+        }
+    }
+
+    /**
+     * Restore original prices when discount no longer applies
+     */
+    private function restoreOriginalPrices(Cart $cart): void
+    {
+        foreach ($cart->items as $item) {
+            if ($item->original_price !== null) {
+                $item->product_price = $item->original_price;
+                $item->subtotal = round($item->quantity * $item->original_price, 2);
+                $item->save();
+            }
+        }
+    }
+
+    /**
+     * Calculate cart totals with discount applied
+     */
+    private function calculateCartTotals(Cart $cart): array
+    {
+        $cart->load('items');
+        
+        // Apply discount if applicable
+        $this->applyCartDiscount($cart);
+        
+        // Reload to get updated prices
+        $cart->load('items');
+        
+        $settings = SiteSetting::getInstance();
+        $minItemNumber = $settings->min_item_number_discount ?? null;
+        $discountPercentage = $settings->discount_percentage_on_item ?? null;
+        
+        $totalItems = $cart->items->sum('quantity');
+        $subtotal = $cart->items->sum('subtotal');
+        $discountApplied = false;
+        $discountAmount = 0;
+        
+        // Calculate discount amount if applicable
+        if ($minItemNumber !== null && $discountPercentage !== null && $discountPercentage > 0 && $totalItems >= $minItemNumber) {
+            $discountApplied = true;
+            // Calculate original total before discount using stored original_price
+            $originalSubtotal = 0;
+            foreach ($cart->items as $item) {
+                $originalPrice = $item->original_price ?? $item->product_price;
+                $originalSubtotal += $originalPrice * $item->quantity;
+            }
+            $discountAmount = $originalSubtotal - $subtotal;
+        }
+        
+        return [
+            'subtotal' => round($subtotal, 2),
+            'total' => round($subtotal, 2),
+            'total_items' => $totalItems,
+            'discount_applied' => $discountApplied,
+            'discount_percentage' => $discountApplied ? $discountPercentage : null,
+            'discount_amount' => round($discountAmount, 2),
+            'original_subtotal' => $discountApplied ? round($subtotal + $discountAmount, 2) : round($subtotal, 2),
+        ];
     }
 
     /**

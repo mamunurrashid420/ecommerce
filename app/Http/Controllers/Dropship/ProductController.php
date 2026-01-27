@@ -241,6 +241,12 @@ class ProductController extends Controller
         ]);
 
         if ($validator->fails()) {
+            $this->logImageSearchFailure([
+                'type' => 'validation_error',
+                'errors' => $validator->errors()->toArray(),
+                'request_data' => $request->except(['image']), // Exclude image file from log
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
@@ -346,6 +352,16 @@ class ProductController extends Controller
             ]);
 
             if (!$result['success']) {
+                $this->logImageSearchFailure([
+                    'type' => 'search_api_error',
+                    'error_message' => $result['message'] ?? 'Unknown error',
+                    'error_data' => $result,
+                    'image_url' => $convertedImageUrl ?? null,
+                    'page' => $page,
+                    'page_size' => $pageSize,
+                    'lang' => $lang,
+                ]);
+                
                 return response()->json($result, 400);
             }
 
@@ -370,6 +386,14 @@ class ProductController extends Controller
         } catch (\Throwable $e) {
             Log::error('Image upload error', [
                 'error' => $e->getMessage(),
+            ]);
+
+            $this->logImageSearchFailure([
+                'type' => 'exception',
+                'error_message' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString(),
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
             ]);
 
             return response()->json([
@@ -1271,6 +1295,43 @@ class ProductController extends Controller
                 'message' => 'Failed to create product',
                 'error' => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Log image search failure to file
+     */
+    private function logImageSearchFailure(array $data): void
+    {
+        try {
+            $logData = [
+                'timestamp' => now()->toIso8601String(),
+                'date' => now()->format('Y-m-d H:i:s'),
+                'data' => $data,
+            ];
+
+            $logContent = json_encode($logData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n" . str_repeat('-', 80) . "\n";
+
+            // Create logs directory if it doesn't exist
+            $logDirectory = storage_path('logs/image-search-failures');
+            if (!is_dir($logDirectory)) {
+                mkdir($logDirectory, 0755, true);
+            }
+
+            // Log to daily file
+            $logFile = $logDirectory . '/image-search-failures-' . now()->format('Y-m-d') . '.log';
+            
+            // Append to log file
+            file_put_contents($logFile, $logContent, FILE_APPEND | LOCK_EX);
+            
+            // Also log to Laravel log for monitoring
+            Log::error('Image search failed', $logData);
+        } catch (\Throwable $e) {
+            // If file logging fails, at least log to Laravel log
+            Log::error('Failed to write image search failure log', [
+                'error' => $e->getMessage(),
+                'original_data' => $data,
+            ]);
         }
     }
 }
