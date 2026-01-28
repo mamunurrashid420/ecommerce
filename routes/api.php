@@ -183,6 +183,7 @@ Route::middleware('customer')->prefix('customer')->group(function () {
     Route::get('/cart', [CartController::class, 'index']);
     Route::post('/cart', [CartController::class, 'store']);
     Route::post('/cart/add', [CartController::class, 'addItem']);
+    Route::post('/cart/sync', [CartController::class, 'sync']);
     Route::put('/cart/items/{cartItemId}', [CartController::class, 'updateItem']);
     Route::delete('/cart/items/{cartItemId}', [CartController::class, 'removeItem']);
     Route::delete('/cart/clear', [CartController::class, 'clearCart']);

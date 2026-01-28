@@ -561,6 +561,11 @@ class CartController extends Controller
                 // Check if item already exists in cart
                 $cartItem = CartItem::where('cart_id', $cart->id)
                     ->where('product_code', $request->product_code)
+                    ->when($request->filled('product_sku'), function ($q) use ($request) {
+                        $q->where('product_sku', $request->product_sku);
+                    }, function ($q) {
+                        $q->whereNull('product_sku');
+                    })
                     ->first();
 
                 if ($cartItem) {
@@ -627,6 +632,183 @@ class CartController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to add item to cart',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Sync guest (localStorage) cart items to authenticated customer's cart
+     * POST /api/customer/cart/sync
+     *
+     * Payload:
+     * {
+     *   "items": [
+     *     {
+     *       "product_id": 123,                // optional
+     *       "product_code": "e3pro-...",      // optional
+     *       "product_name": "Name",          // required when product_id is null
+     *       "product_price": "1200",         // required when product_id is null
+     *       "product_image": "https://...",  // optional
+     *       "product_sku": "sku_id",         // optional (used to keep dropship variants separate)
+     *       "quantity": 4
+     *     }
+     *   ]
+     * }
+     */
+    public function sync(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'items' => 'required|array',
+            'items.*.product_id' => 'nullable|exists:products,id',
+            'items.*.product_code' => 'nullable|string',
+            'items.*.product_name' => 'required_without:items.*.product_id|string',
+            'items.*.product_price' => 'required_without:items.*.product_id|numeric|min:0',
+            'items.*.product_image' => 'nullable|string',
+            'items.*.product_sku' => 'nullable|string',
+            'items.*.quantity' => 'required|integer|min:1',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $items = $request->input('items', []);
+        if (count($items) === 0) {
+            return response()->json([
+                'success' => true,
+                'message' => 'No items to sync',
+                'data' => ['synced' => 0]
+            ]);
+        }
+
+        try {
+            $customer = auth('sanctum')->user();
+            DB::beginTransaction();
+
+            $cart = Cart::firstOrCreate(['customer_id' => $customer->id]);
+
+            $synced = 0;
+
+            foreach ($items as $item) {
+                // Must provide either product_id or product_code
+                if (empty($item['product_id']) && empty($item['product_code'])) {
+                    continue;
+                }
+
+                // Local product path
+                if (!empty($item['product_id'])) {
+                    $product = Product::findOrFail($item['product_id']);
+
+                    if (!$product->is_active) {
+                        continue;
+                    }
+
+                    // Check stock (cap to available stock)
+                    $qtyToAdd = (int) $item['quantity'];
+                    if ($product->stock_quantity < $qtyToAdd) {
+                        $qtyToAdd = (int) $product->stock_quantity;
+                    }
+                    if ($qtyToAdd <= 0) {
+                        continue;
+                    }
+
+                    $cartItem = CartItem::where('cart_id', $cart->id)
+                        ->where('product_id', $product->id)
+                        ->first();
+
+                    if ($cartItem) {
+                        $newQuantity = $cartItem->quantity + $qtyToAdd;
+                        if ($product->stock_quantity < $newQuantity) {
+                            $newQuantity = (int) $product->stock_quantity;
+                        }
+                        $cartItem->quantity = $newQuantity;
+                        $cartItem->subtotal = $newQuantity * $cartItem->product_price;
+                        $cartItem->save();
+                    } else {
+                        CartItem::create([
+                            'cart_id' => $cart->id,
+                            'product_id' => $product->id,
+                            'product_code' => null,
+                            'product_name' => $product->name,
+                            'product_price' => $product->price,
+                            'original_price' => $product->price,
+                            'product_image' => $product->image_url,
+                            'product_sku' => $product->sku,
+                            'quantity' => $qtyToAdd,
+                            'subtotal' => $qtyToAdd * $product->price,
+                        ]);
+                    }
+
+                    $synced++;
+                    continue;
+                }
+
+                // Dropship product path
+                $productCode = (string) ($item['product_code'] ?? '');
+                $productSku = $item['product_sku'] ?? null;
+
+                $cartItem = CartItem::where('cart_id', $cart->id)
+                    ->where('product_code', $productCode)
+                    ->whereNull('product_id')
+                    ->when(!empty($productSku), function ($q) use ($productSku) {
+                        $q->where('product_sku', $productSku);
+                    }, function ($q) {
+                        $q->whereNull('product_sku');
+                    })
+                    ->first();
+
+                if ($cartItem) {
+                    $newQuantity = $cartItem->quantity + (int) $item['quantity'];
+                    $cartItem->quantity = $newQuantity;
+                    $cartItem->subtotal = $newQuantity * $cartItem->product_price;
+                    $cartItem->save();
+                } else {
+                    CartItem::create([
+                        'cart_id' => $cart->id,
+                        'product_id' => null,
+                        'product_code' => $productCode,
+                        'product_name' => (string) ($item['product_name'] ?? ''),
+                        'product_price' => (float) ($item['product_price'] ?? 0),
+                        'original_price' => (float) ($item['product_price'] ?? 0),
+                        'product_image' => $item['product_image'] ?? null,
+                        'product_sku' => $productSku,
+                        'quantity' => (int) $item['quantity'],
+                        'subtotal' => (int) $item['quantity'] * (float) ($item['product_price'] ?? 0),
+                    ]);
+                }
+
+                $synced++;
+            }
+
+            DB::commit();
+
+            // Return updated cart
+            $cart->load('items');
+            $this->applyCartDiscount($cart);
+            $cart->load('items');
+            $totals = $this->calculateCartTotals($cart);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cart synced successfully',
+                'data' => [
+                    'synced' => $synced,
+                    'cart_id' => $cart->id,
+                    'total_items' => $totals['total_items'],
+                    'subtotal' => $totals['subtotal'],
+                    'total' => $totals['total'],
+                ]
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to sync cart',
                 'error' => $e->getMessage()
             ], 500);
         }
