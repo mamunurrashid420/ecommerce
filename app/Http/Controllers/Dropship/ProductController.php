@@ -288,58 +288,12 @@ class ProductController extends Controller
             $page = $request->integer('page', 1);
             $pageSize = $request->integer('page_size', 20);
             $lang = $request->input('lang', 'en');
-
-            // Check if URL is from Alibaba CDN or local/internal domain
-            $isAlibabaCdnUrl = str_contains($searchImageUrl, 'alicdn.com');
-            $appUrl = config('app.url', 'http://localhost');
-            $appHost = parse_url($appUrl, PHP_URL_HOST);
-            $imageHost = parse_url($searchImageUrl, PHP_URL_HOST);
-            $isLocalUrl = $imageHost && ($imageHost === $appHost || str_ends_with($imageHost, '.' . $appHost) || str_ends_with($appHost, '.' . $imageHost));
-
-            if ($isAlibabaCdnUrl || $isLocalUrl) {
-                // Use URL directly for Alibaba CDN or local URLs (external API can't access local URLs)
-                $convertedImageUrl = $searchImageUrl;
-                Log::info('Using URL directly (Alibaba CDN or local)', [
-                    'url' => $searchImageUrl,
-                    'is_alibaba' => $isAlibabaCdnUrl,
-                    'is_local' => $isLocalUrl,
-                ]);
-            } else {
-                // For non-Alibaba, non-local URLs, try to convert them
-                $conversionResult = $this->dropshipService->convertImageUrlForSearch(
-                    $searchImageUrl,
-                    '/global/search/image/v2'
-                );
-
-                Log::info('Image URL conversion result', [
-                    'original_url' => $searchImageUrl,
-                    'conversion_result' => $conversionResult,
-                ]);
-
-                if ($conversionResult['success'] && isset($conversionResult['data']['image_url'])) {
-                    $convertedImageUrl = $conversionResult['data']['image_url'];
-                    Log::info('Image URL converted successfully', [
-                        'original_url' => $searchImageUrl,
-                        'converted_url' => $convertedImageUrl,
-                    ]);
-                } else {
-                    Log::warning('Image URL conversion failed, using original URL', [
-                        'original_url' => $searchImageUrl,
-                        'error' => $conversionResult['message'] ?? 'Unknown error',
-                        'full_result' => $conversionResult,
-                    ]);
-                    // Use original URL if conversion fails
-                    $convertedImageUrl = $searchImageUrl;
-                }
-            }
-
-            Log::info('Searching by image', [
-                'platform' => '1688',
-                'image_url' => $convertedImageUrl,
-                'page' => $page,
-                'page_size' => $pageSize,
-                'lang' => $lang,
-            ]);
+            
+            return $conversionResult = $this->dropshipService->convertImageUrlForSearch(
+                $searchImageUrl,
+                '/global/search/image/v2'
+            );
+       
 
             $result = $this->dropshipService->searchByImage(
                 '1688',

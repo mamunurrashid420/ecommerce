@@ -306,7 +306,7 @@ class DropshipService
      * Convert non-Alibaba image URL to Alibaba-compatible URL for search
      * This uses TMAPI's image URL conversion endpoint
      */
-    public function convertImageUrlForSearch(string $imageUrl, string $searchApiEndpoint = '/global/search/image/v2'): array
+    public function convertImageUrlForSearch(string $imageUrl, string $searchApiEndpoint = '/global/search/image/v2')
     {
         try {
             $url = "{$this->baseUrl}/1688/tools/image/convert_url";
@@ -320,46 +320,9 @@ class DropshipService
                     'url' => $imageUrl,
                     'search_api_endpoint' => $searchApiEndpoint,
                 ]);
+            return $response->json();
+  
 
-            if ($response->successful()) {
-                $data = $response->json();
-
-                Log::info('Image URL conversion API response', [
-                    'url' => $url,
-                    'original_url' => $imageUrl,
-                    'response_data' => $data,
-                ]);
-
-                // Check for API-level errors
-                if (isset($data['code']) && $data['code'] !== 200) {
-                    Log::warning('Image URL conversion failed', [
-                        'error_code' => $data['code'],
-                        'message' => $data['msg'] ?? 'API error',
-                        'original_url' => $imageUrl,
-                        'full_response' => $data,
-                    ]);
-
-                    // Return original URL if conversion fails
-                    return [
-                        'success' => false,
-                        'error_code' => $data['code'],
-                        'message' => $data['msg'] ?? 'Image conversion failed',
-                        'data' => ['url' => $imageUrl],
-                    ];
-                }
-
-                return [
-                    'success' => true,
-                    'error_code' => 200,
-                    'message' => $data['msg'] ?? 'Success',
-                    'data' => $data['data'] ?? $data,
-                ];
-            }
-
-            // If HTTP request fails, log detailed error information
-            $statusCode = $response->status();
-            $responseBody = $response->body();
-            $responseData = null;
             
             try {
                 $responseData = $response->json();
@@ -367,14 +330,7 @@ class DropshipService
                 // Response is not JSON, use raw body
             }
 
-            Log::warning('Image URL conversion HTTP request failed', [
-                'status_code' => $statusCode,
-                'original_url' => $imageUrl,
-                'api_url' => $url,
-                'response_body' => $responseBody,
-                'response_data' => $responseData,
-            ]);
-
+      
             // Extract error message from response if available
             $errorMessage = 'HTTP request failed';
             if ($responseData) {
@@ -390,11 +346,7 @@ class DropshipService
             ];
 
         } catch (\Exception $e) {
-            Log::error('Image URL conversion error', [
-                'error' => $e->getMessage(),
-                'original_url' => $imageUrl,
-            ]);
-
+            
             // If conversion fails, return the original URL
             return [
                 'success' => false,
