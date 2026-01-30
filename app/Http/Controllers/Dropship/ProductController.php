@@ -308,7 +308,7 @@ class ProductController extends Controller
                 // For non-Alibaba, non-local URLs, try to convert them
                 $conversionResult = $this->dropshipService->convertImageUrlForSearch(
                     $searchImageUrl,
-                    '/global/search/image'
+                    '/global/search/image/v2'
                 );
 
                 Log::info('Image URL conversion result', [

@@ -306,7 +306,7 @@ class DropshipService
      * Convert non-Alibaba image URL to Alibaba-compatible URL for search
      * This uses TMAPI's image URL conversion endpoint
      */
-    public function convertImageUrlForSearch(string $imageUrl, string $searchApiEndpoint = '/search/image'): array
+    public function convertImageUrlForSearch(string $imageUrl, string $searchApiEndpoint = '/global/search/image/v2'): array
     {
         try {
             $url = "{$this->baseUrl}/1688/tools/image/convert_url";
