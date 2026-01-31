@@ -273,15 +273,14 @@ class ProductController extends Controller
 
                 $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
 
-
                 $searchImageUrl =  Storage::disk('public')->url($uploadedImagePath);
 
             }
-            return response()->json([
-                'success' => true,
-                'message' => 'Checking url ',
-                'data' => $searchImageUrl,
-            ], 200);
+            // return response()->json([
+            //     'success' => true,
+            //     'message' => 'Checking url ',
+            //     'data' => $searchImageUrl,
+            // ], 200);
 
             $page = $request->integer('page', 1);
             $pageSize = $request->integer('page_size', 20);
