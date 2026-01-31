@@ -257,36 +257,55 @@ class ProductController extends Controller
         try {
             $uploadedImagePath = null;
             $absoluteFilePath = null;
-            $searchImageUrl = 'https://api.e3shopbd.com/storage/categories/icons/icon_1769600229_6979f4e59db01.jpg';
+            $searchImageUrl = null;
 
-            // if ($request->hasFile('image')) {
-            //     $imageFile = $request->file('image');
+            if ($request->hasFile('image')) {
+                $imageFile = $request->file('image');
 
-            //     $filename = 'search_' . time() . '_' . uniqid() . '.' . $imageFile->getClientOriginalExtension();
+                $filename = 'search_' . time() . '_' . uniqid() . '.' . $imageFile->getClientOriginalExtension();
 
-            //     // Save to storage/app/public/search-images
-            //     $uploadedImagePath = $imageFile->storeAs(
-            //         'search-images',
-            //         $filename,
-            //         'public'
-            //     );
+                // Save to storage/app/public/search-images
+                $uploadedImagePath = $imageFile->storeAs(
+                    'search-images',
+                    $filename,
+                    'public'
+                );
 
-            //     $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
+                $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
 
 
-            //     $searchImageUrl =  Storage::disk('public')->url($uploadedImagePath);
+                $searchImageUrl =  Storage::disk('public')->url($uploadedImagePath);
 
-            // }
+            }
 
             $page = $request->integer('page', 1);
             $pageSize = $request->integer('page_size', 20);
             $lang = $request->input('lang', 'en');
 
-            return $conversionResult = $this->dropshipService->convertImageUrlForSearch(
+            // Convert image URL for search - REQUIRED, local URLs won't work without conversion
+            $conversionResult = $this->dropshipService->convertImageUrlForSearch(
                 $searchImageUrl,
                 '/global/search/image/v2'
             );
-       
+            
+            // return $conversionResult['data'];
+            // Check if conversion was successful
+            if (empty($conversionResult['data']['image_url'])) {
+                $this->logImageSearchFailure([
+                    'type' => 'image_conversion_failed',
+                    'original_url' => $searchImageUrl,
+                    'conversion_result' => $conversionResult,
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to convert image URL for search. Local image URLs must be converted before use.',
+                    'error' => $conversionResult['message'] ?? 'Image conversion failed',
+                ], 400);
+            }
+            
+            // Use the converted URL (required for API to work)
+            $convertedImageUrl = $conversionResult['data']['image_url'];
 
             $result = $this->dropshipService->searchByImage(
                 '1688',

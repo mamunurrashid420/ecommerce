@@ -131,8 +131,8 @@ class DropshipService
         }
 
         $params['language'] = $lang;
-        // Use multi-language endpoint for non-Chinese languages
-        $endpoint = 'global/search/image';
+        // Use v2 endpoint for image search
+        $endpoint = 'global/search/image/v2';
 
         return $this->makeRequest($platform, $endpoint, $params);
     }
@@ -308,98 +308,47 @@ class DropshipService
      */
     public function convertImageUrlForSearch(string $imageUrl, string $searchApiEndpoint = '/global/search/image/v2')
     {
+        // Try using the image conversion endpoint with POST request
+        $apiUrl = "{$this->baseUrl}/1688/tools/image/convert_url";
+        
+        // POST body data (apiToken in query string to match other API calls)
+        $postData = [
+            'url' => $imageUrl,
+            'search_api_endpoint' => $searchApiEndpoint,
+        ];
+        
+        // Add apiToken to query string (consistent with other API calls)
+        $urlWithToken = $apiUrl . '?apiToken=' . urlencode($this->apiToken);
+        
         try {
-            $url = "{$this->baseUrl}/1688/tools/image/convert_url?apiToken={$this->apiToken}";
-
+            // Send as JSON with proper headers (417 error often due to Content-Type mismatch)
             $response = Http::timeout(30)
+                ->asJson()
                 ->withHeaders([
-                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
                 ])
-                ->post($url, [
-                    'url' => $imageUrl,
-                    'search_api_endpoint' => $searchApiEndpoint,
-                ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-
-                Log::info('Image URL conversion API response', [
-                    'url' => $url,
-                    'original_url' => $imageUrl,
-                    'response_data' => $data,
-                ]);
-
-                // Check for API-level errors
-                if (isset($data['code']) && $data['code'] !== 200) {
-                    Log::warning('Image URL conversion failed', [
-                        'error_code' => $data['code'],
-                        'message' => $data['msg'] ?? 'API error',
-                        'original_url' => $imageUrl,
-                        'full_response' => $data,
-                    ]);
-
-                    // Return original URL if conversion fails
-                    return [
-                        'success' => false,
-                        'error_code' => $data['code'],
-                        'message' => $data['msg'] ?? 'Image conversion failed',
-                        'data' => ['url' => $imageUrl],
-                    ];
-                }
-
-                return [
-                    'success' => true,
-                    'error_code' => 200,
-                    'message' => $data['msg'] ?? 'Success',
-                    'data' => $data['data'] ?? $data,
-                ];
-            }
-
-            // If HTTP request fails, log detailed error information
-            $statusCode = $response->status();
-            $responseBody = $response->body();
-            $responseData = null;
+                ->post($urlWithToken, $postData);
             
-            try {
-                $responseData = $response->json();
-            } catch (\Exception $e) {
-                // Response is not JSON, use raw body
-            }
 
-            Log::warning('Image URL conversion HTTP request failed', [
-                'status_code' => $statusCode,
-                'original_url' => $imageUrl,
-                'api_url' => $url,
-                'response_body' => $responseBody,
-                'response_data' => $responseData,
-            ]);
+                Log::info('Image URL conversion result', [
+                    'response' => $response->json(),
+                ]);
 
-            // Extract error message from response if available
-            $errorMessage = 'HTTP request failed';
-            if ($responseData) {
-                $errorMessage = $responseData['msg'] ?? $responseData['message'] ?? $errorMessage;
-            }
+                return $response->json();
 
-            // If HTTP request fails, return original URL
-            return [
-                'success' => false,
-                'error_code' => $statusCode,
-                'message' => $errorMessage,
-                'data' => ['url' => $imageUrl],
-            ];
-
+     
         } catch (\Exception $e) {
-            Log::error('Image URL conversion error', [
-                'error' => $e->getMessage(),
+            // If conversion fails, return error
+            Log::warning('Image URL conversion exception', [
                 'original_url' => $imageUrl,
+                'error' => $e->getMessage(),
             ]);
-
-            // If conversion fails, return the original URL
+            
             return [
                 'success' => false,
+                'data' => null,
+                'message' => 'Image conversion exception: ' . $e->getMessage(),
                 'error_code' => 'EXCEPTION',
-                'message' => $e->getMessage(),
-                'data' => ['url' => $imageUrl],
             ];
         }
     }
