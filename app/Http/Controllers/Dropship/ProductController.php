@@ -277,7 +277,12 @@ class ProductController extends Controller
                 $searchImageUrl =  Storage::disk('public')->url($uploadedImagePath);
 
             }
-            return $searchImageUrl;
+            return response()->json([
+                'success' => true,
+                'message' => 'Checking url ',
+                'data' => $searchImageUrl,
+            ], 200);
+
             $page = $request->integer('page', 1);
             $pageSize = $request->integer('page_size', 20);
             $lang = $request->input('lang', 'en');
