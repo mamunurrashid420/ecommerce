@@ -113,6 +113,96 @@ class OfferController extends Controller
     }
 
     /**
+     * Get featured offers (Public/Customer endpoint)
+     * 
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function featured(Request $request): JsonResponse
+    {
+        try {
+            $query = Offer::active()
+                ->available()
+                ->featured()
+                ->ordered();
+
+            // Sort options
+            $sortBy = $request->get('sort_by');
+            $sortOrder = $request->get('sort_order', 'desc');
+            
+            if ($sortBy) {
+                $query->orderBy($sortBy, $sortOrder);
+            }
+
+            // Pagination
+            $perPage = $request->get('per_page', 20);
+            $offers = $query->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $offers->items(),
+                'pagination' => [
+                    'current_page' => $offers->currentPage(),
+                    'last_page' => $offers->lastPage(),
+                    'per_page' => $offers->perPage(),
+                    'total' => $offers->total(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve featured offers',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get non-featured offers (Public/Customer endpoint)
+     * 
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function nonFeatured(Request $request): JsonResponse
+    {
+        try {
+            $query = Offer::active()
+                ->available()
+                ->where('is_featured', false)
+                ->ordered();
+
+            // Sort options
+            $sortBy = $request->get('sort_by');
+            $sortOrder = $request->get('sort_order', 'desc');
+            
+            if ($sortBy) {
+                $query->orderBy($sortBy, $sortOrder);
+            }
+
+            // Pagination
+            $perPage = $request->get('per_page', 20);
+            $offers = $query->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $offers->items(),
+                'pagination' => [
+                    'current_page' => $offers->currentPage(),
+                    'last_page' => $offers->lastPage(),
+                    'per_page' => $offers->perPage(),
+                    'total' => $offers->total(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve non-featured offers',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get a single offer
      * 
      * @param int $id

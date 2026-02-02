@@ -142,6 +142,8 @@ Route::prefix('deals')->group(function () {
 // Public Offer routes (No authentication required)
 Route::prefix('offers')->group(function () {
     Route::get('/', [OfferController::class, 'index']);
+    Route::get('/featured', [OfferController::class, 'featured']);
+    Route::get('/non-featured', [OfferController::class, 'nonFeatured']);
     Route::get('/customer', [OfferController::class, 'customerOffers']);
     Route::get('/{id}', [OfferController::class, 'show']);
 });
