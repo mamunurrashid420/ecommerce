@@ -284,6 +284,7 @@ class CouponController extends Controller
 
     /**
      * Validate coupon code (Customer endpoint)
+     * For dropshipping - accepts items with prices directly (no product_id validation)
      */
     public function validate(Request $request): JsonResponse
     {
@@ -291,11 +292,27 @@ class CouponController extends Controller
             $request->validate([
                 'code' => 'required|string|max:50',
                 'items' => 'required|array|min:1',
-                'items.*.product_id' => 'required|exists:products,id',
                 'items.*.quantity' => 'required|integer|min:1',
+                // Price can be provided as 'price', 'product_price', or 'subtotal'
+                'items.*.price' => 'nullable|numeric|min:0',
+                'items.*.product_price' => 'nullable|numeric|min:0',
+                'items.*.subtotal' => 'nullable|numeric|min:0',
+                // Optional fields for reference
+                'items.*.product_id' => 'nullable|integer',
+                'items.*.product_code' => 'nullable|string',
             ]);
 
             $customer = $this->getAuthenticatedCustomer();
+            
+            // Validate that at least one price field is provided for each item
+            foreach ($request->items as $index => $item) {
+                $hasPrice = isset($item['price']) || isset($item['product_price']) || isset($item['subtotal']);
+                if (!$hasPrice) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.price" => ['At least one of price, product_price, or subtotal must be provided.']
+                    ]);
+                }
+            }
             
             $result = $this->couponService->validateAndCalculateDiscount(
                 $request->code,

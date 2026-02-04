@@ -16,8 +16,11 @@ use App\Notifications\OrderCancelledNotification;
 use App\Services\InventoryService;
 use App\Services\PurchaseService;
 use App\Services\CouponService;
+use App\Services\InvoiceService;
+use App\Services\SmsService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Exception;
 
 class OrderService
@@ -25,15 +28,21 @@ class OrderService
     protected $inventoryService;
     protected $purchaseService;
     protected $couponService;
+    protected $invoiceService;
+    protected $smsService;
 
     public function __construct(
         InventoryService $inventoryService,
         PurchaseService $purchaseService,
-        CouponService $couponService
+        CouponService $couponService,
+        InvoiceService $invoiceService,
+        SmsService $smsService
     ) {
         $this->inventoryService = $inventoryService;
         $this->purchaseService = $purchaseService;
         $this->couponService = $couponService;
+        $this->invoiceService = $invoiceService;
+        $this->smsService = $smsService;
     }
 
     /**
@@ -290,6 +299,28 @@ class OrderService
         
         $orders = $query->paginate($perPage);
         
+        // Generate invoices for partially_paid orders that don't have one or have HTML invoice
+        foreach ($orders->items() as $order) {
+            if ($order->status === 'partially_paid' && (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'))) {
+                try {
+                    $order->load(['customer', 'orderItems', 'coupon']);
+                    // Delete old invoice if exists
+                    if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
+                        Storage::disk('public')->delete($order->invoice_path);
+                    }
+                    $invoicePath = $this->invoiceService->generateInvoice($order);
+                    $order->invoice_path = $invoicePath;
+                    $order->save();
+                    $order->refresh(); // Refresh to get invoice_url accessor
+                } catch (Exception $e) {
+                    Log::warning('Failed to generate invoice for partially_paid order in list', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+        
         return [
             'success' => true,
             'data' => $orders->items(),
@@ -332,6 +363,28 @@ class OrderService
         
         $orders = $query->paginate($perPage);
         
+        // Generate invoices for partially_paid orders that don't have one or have HTML invoice
+        foreach ($orders->items() as $order) {
+            if ($order->status === 'partially_paid' && (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'))) {
+                try {
+                    $order->load(['customer', 'orderItems', 'coupon']);
+                    // Delete old invoice if exists
+                    if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
+                        Storage::disk('public')->delete($order->invoice_path);
+                    }
+                    $invoicePath = $this->invoiceService->generateInvoice($order);
+                    $order->invoice_path = $invoicePath;
+                    $order->save();
+                    $order->refresh(); // Refresh to get invoice_url accessor
+                } catch (Exception $e) {
+                    Log::warning('Failed to generate invoice for partially_paid order in customer list', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+        
         return [
             'success' => true,
             'data' => $orders->items(),
@@ -359,6 +412,27 @@ class OrderService
         // If customer ID is provided, verify ownership
         if ($customerId !== null && $order->customer_id !== $customerId) {
             throw new Exception('Unauthorized access to this order');
+        }
+        
+        // Generate invoice if order is partially_paid and doesn't have one or has HTML invoice
+        if ($order->status === 'partially_paid' && (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'))) {
+            try {
+                $order->load(['customer', 'orderItems', 'coupon']);
+                // Delete old invoice if exists
+                if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
+                    Storage::disk('public')->delete($order->invoice_path);
+                }
+                $invoicePath = $this->invoiceService->generateInvoice($order);
+                $order->invoice_path = $invoicePath;
+                $order->save();
+                // Reload to get the invoice_url accessor
+                $order->refresh();
+            } catch (Exception $e) {
+                Log::warning('Failed to generate invoice for partially_paid order', [
+                    'order_id' => $orderId,
+                    'error' => $e->getMessage()
+                ]);
+            }
         }
         
         return [
@@ -449,6 +523,57 @@ class OrderService
             // No need to release stock on cancellation
             
             DB::commit();
+            
+            // Generate invoice and send SMS when status changes to partially_paid
+            if ($status === 'partially_paid' && $oldStatus !== 'partially_paid') {
+                try {
+                    // Reload order with relationships
+                    $order->load(['customer', 'orderItems', 'coupon']);
+                    
+                    // Generate invoice if not already generated
+                    if (empty($order->invoice_path)) {
+                        $invoicePath = $this->invoiceService->generateInvoice($order);
+                        $order->invoice_path = $invoicePath;
+                        $order->save();
+                    }
+                    
+                    // Send SMS to customer
+                    if ($order->customer && $order->customer->phone) {
+                        $invoiceUrl = $this->invoiceService->getInvoiceUrl($order->invoice_path);
+                        $siteSettings = \App\Models\SiteSetting::getInstance();
+                        $businessName = $siteSettings->business_name ?? $siteSettings->title ?? 'e3shopbd';
+                        $currencySymbol = $siteSettings->currency_symbol ?? '৳';
+                        
+                        $message = "Dear {$order->customer->name}, Your order #{$order->order_number} status has been updated to Partially Paid. ";
+                        $message .= "Total Amount: {$order->total_amount} {$currencySymbol}. ";
+                        $message .= "Paid: {$order->paid_amount} {$currencySymbol}. ";
+                        if ($order->due_amount > 0) {
+                            $message .= "Due: {$order->due_amount} {$currencySymbol}. ";
+                        }
+                        if ($invoiceUrl) {
+                            $message .= "Invoice: {$invoiceUrl}";
+                        }
+                        $message .= " - {$businessName}";
+                        
+                        $formattedPhone = $this->smsService->formatMobile($order->customer->phone);
+                        $smsResult = $this->smsService->sendSms($formattedPhone, $message);
+                        
+                        if (!$smsResult['success']) {
+                            Log::warning('Failed to send SMS for order status update', [
+                                'order_id' => $order->id,
+                                'customer_phone' => $formattedPhone,
+                                'error' => $smsResult['error'] ?? 'Unknown error'
+                            ]);
+                        }
+                    }
+                } catch (Exception $e) {
+                    // Log error but don't fail the status update
+                    Log::error('Failed to generate invoice or send SMS for order', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
             
             return [
                 'success' => true,
@@ -723,7 +848,7 @@ class OrderService
             'processing_for_refund' => ['refunded', 'cancelled'],
             'refunded' => [], // Final state
             // Legacy statuses for backward compatibility
-            'pending' => ['pending_payment_verification', 'processing', 'cancelled'],
+            'pending' => ['partially_paid', 'pending_payment_verification', 'processing', 'cancelled'],
             'processing' => ['purchasing', 'shipped', 'cancelled'],
             'shipped' => ['on_the_way_to_delivery', 'delivered', 'cancelled'],
             'delivered' => ['completed'], // Can transition to completed

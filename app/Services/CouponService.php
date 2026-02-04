@@ -13,10 +13,10 @@ use Exception;
 class CouponService
 {
     /**
-     * Validate and apply coupon to order items
+     * Validate and apply coupon to order items (Dropshipping - no product database required)
      * 
      * @param string $couponCode
-     * @param array $items Array of order items with product_id and quantity
+     * @param array $items Array of order items with price and quantity (no product_id required)
      * @param int|null $customerId
      * @return array
      * @throws Exception
@@ -42,34 +42,38 @@ class CouponService
             }
         }
 
-        // Calculate subtotal from items
+        // Calculate subtotal from items (dropshipping - items have prices directly)
         $subtotal = 0;
         $applicableItems = [];
 
         foreach ($items as $item) {
-            $product = Product::find($item['product_id']);
+            // Get price from item (can be 'price', 'product_price', or 'subtotal')
+            $itemPrice = 0;
+            if (isset($item['price'])) {
+                $itemPrice = floatval($item['price']);
+            } elseif (isset($item['product_price'])) {
+                $itemPrice = floatval($item['product_price']);
+            } elseif (isset($item['subtotal'])) {
+                // If subtotal is provided, calculate price per unit
+                $quantity = isset($item['quantity']) ? intval($item['quantity']) : 1;
+                $itemPrice = $quantity > 0 ? floatval($item['subtotal']) / $quantity : 0;
+            }
+
+            // Get quantity
+            $quantity = isset($item['quantity']) ? intval($item['quantity']) : 1;
             
-            if (!$product) {
-                continue;
+            if ($itemPrice <= 0 || $quantity <= 0) {
+                continue; // Skip invalid items
             }
 
-            // Check if coupon applies to this product
-            if (!$coupon->appliesToProduct($product->id)) {
-                continue;
-            }
-
-            // Check if coupon applies to product's category
-            if (!$coupon->appliesToCategory($product->category_id)) {
-                continue;
-            }
-
-            $itemTotal = $product->price * $item['quantity'];
+            $itemTotal = $itemPrice * $quantity;
             $subtotal += $itemTotal;
             
             $applicableItems[] = [
-                'product_id' => $product->id,
-                'quantity' => $item['quantity'],
-                'price' => $product->price,
+                'product_id' => $item['product_id'] ?? null,
+                'product_code' => $item['product_code'] ?? null,
+                'quantity' => $quantity,
+                'price' => $itemPrice,
                 'total' => $itemTotal,
             ];
         }

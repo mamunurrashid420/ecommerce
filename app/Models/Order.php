@@ -28,6 +28,7 @@ class Order extends Model
         'payment_status',
         'transaction_number',
         'payment_receipt_image',
+        'invoice_path',
         'paid_at',
         'shipping_address',
         'notes',
@@ -54,7 +55,7 @@ class Order extends Model
         'cancelled_at' => 'datetime',
     ];
 
-    protected $appends = ['payment_receipt_url'];
+    protected $appends = ['payment_receipt_url', 'invoice_url'];
 
     public function customer()
     {
@@ -153,5 +154,23 @@ class Order extends Model
 
         // If URL doesn't start with /, add it and prepend app URL
         return config('app.url') . '/' . ltrim($this->payment_receipt_image, '/');
+    }
+
+    /**
+     * Get full invoice URL
+     */
+    public function getInvoiceUrlAttribute()
+    {
+        if (empty($this->invoice_path)) {
+            return null;
+        }
+
+        // If URL already starts with http/https, return as is
+        if (str_starts_with($this->invoice_path, 'http://') || str_starts_with($this->invoice_path, 'https://')) {
+            return $this->invoice_path;
+        }
+
+        // Return storage URL
+        return \Illuminate\Support\Facades\Storage::disk('public')->url($this->invoice_path);
     }
 }

@@ -8,14 +8,23 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderStatusHistory;
 use App\Models\SiteSetting;
+use App\Services\CouponService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Exception;
 
 class OrderController extends Controller
 {
+    protected $couponService;
+
+    public function __construct(CouponService $couponService)
+    {
+        $this->couponService = $couponService;
+    }
+
     /**
      * Create order from cart
      * POST /api/customer/orders/create
@@ -23,6 +32,7 @@ class OrderController extends Controller
      * Supports both local and dropship products
      * Transaction number and payment receipt are optional
      * Creates separate orders for each item with 70% payable price
+     * Supports coupon code application
      */
     public function createFromCart(Request $request): JsonResponse
     {
@@ -55,6 +65,7 @@ class OrderController extends Controller
                 'notes' => 'nullable|string',
                 'transaction_number' => 'nullable|string|max:255',
                 'payment_receipt' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // Max 5MB
+                'coupon_code' => 'nullable|string|max:50',
                 'items' => 'required|array|min:1',
                 'items.*.id' => 'required|integer',
                 'items.*.quantity' => 'nullable|integer|min:1',
@@ -113,6 +124,59 @@ class OrderController extends Controller
             $taxRate = $settings->tax_rate ?? 0;
             $taxInclusive = $settings->tax_inclusive ?? false;
 
+            // Validate and calculate coupon discount if provided
+            $couponDiscount = 0;
+            $couponCode = null;
+            $couponId = null;
+            $totalOrderSubtotal = 0;
+            
+            if (!empty($request->coupon_code)) {
+                try {
+                    // Calculate total subtotal from all items for coupon validation
+                    $couponItems = [];
+                    foreach ($items as $item) {
+                        $itemPrice = 0;
+                        if (isset($item['product_price'])) {
+                            $itemPrice = floatval($item['product_price']);
+                        } elseif (isset($item['subtotal'])) {
+                            $quantity = isset($item['quantity']) ? intval($item['quantity']) : 1;
+                            $itemPrice = $quantity > 0 ? floatval($item['subtotal']) / $quantity : 0;
+                        }
+                        
+                        $quantity = isset($item['quantity']) ? intval($item['quantity']) : 1;
+                        if ($itemPrice > 0 && $quantity > 0) {
+                            $couponItems[] = [
+                                'price' => $itemPrice,
+                                'quantity' => $quantity,
+                                'product_id' => $item['product_id'] ?? null,
+                                'product_code' => $item['product_code'] ?? null,
+                            ];
+                        }
+                    }
+                    
+                    if (!empty($couponItems)) {
+                        $couponResult = $this->couponService->validateAndCalculateDiscount(
+                            $request->coupon_code,
+                            $couponItems,
+                            $customer->id
+                        );
+                        
+                        $couponDiscount = $couponResult['discount_amount'];
+                        $couponCode = $couponResult['coupon']->code;
+                        $couponId = $couponResult['coupon']->id;
+                        $totalOrderSubtotal = $couponResult['subtotal'];
+                    }
+                } catch (Exception $e) {
+                    // Log coupon error but don't fail order creation
+                    \Log::warning('Coupon application failed during order creation', [
+                        'coupon_code' => $request->coupon_code,
+                        'customer_id' => $customer->id,
+                        'error' => $e->getMessage()
+                    ]);
+                    // Continue without coupon
+                }
+            }
+
             // Array to store all created orders
             $createdOrders = [];
 
@@ -139,11 +203,44 @@ class OrderController extends Controller
                     $taxRate,
                     $taxInclusive,
                     $shippingAddressJson,
-                    $paymentReceiptPath
+                    $paymentReceiptPath,
+                    $couponCode,
+                    $couponId,
+                    $couponDiscount,
+                    $totalOrderSubtotal
                 );
 
                 if ($order) {
                     $createdOrders[] = $order;
+                }
+            }
+
+            // Record coupon usage if coupon was applied
+            if ($couponId && !empty($createdOrders)) {
+                try {
+                    // Calculate total order amount for coupon usage record
+                    $totalOrderAmount = 0;
+                    $totalOrderAmountAfterDiscount = 0;
+                    foreach ($createdOrders as $order) {
+                        $totalOrderAmount += $order->subtotal;
+                        $totalOrderAmountAfterDiscount += $order->total_amount;
+                    }
+                    
+                    $this->couponService->recordUsage(
+                        $couponId,
+                        $createdOrders[0]->id, // Use first order ID for reference
+                        $customer->id,
+                        $couponDiscount,
+                        $totalOrderSubtotal,
+                        $totalOrderAmountAfterDiscount
+                    );
+                } catch (Exception $e) {
+                    // Log error but don't fail order creation
+                    \Log::warning('Failed to record coupon usage', [
+                        'coupon_id' => $couponId,
+                        'order_id' => $createdOrders[0]->id ?? null,
+                        'error' => $e->getMessage()
+                    ]);
                 }
             }
 
@@ -477,7 +574,11 @@ class OrderController extends Controller
         $taxRate,
         $taxInclusive,
         $shippingAddressJson,
-        $paymentReceiptPath
+        $paymentReceiptPath,
+        $couponCode = null,
+        $couponId = null,
+        $totalCouponDiscount = 0,
+        $totalOrderSubtotal = 0
     ) {
         try {
             $orderItemsData = [];
@@ -618,19 +719,29 @@ class OrderController extends Controller
                 return null;
             }
 
+            // Calculate coupon discount for this order (proportional to order subtotal)
+            $orderDiscount = 0;
+            if ($couponCode && $totalCouponDiscount > 0 && $totalOrderSubtotal > 0) {
+                // Calculate proportional discount for this order
+                $orderDiscount = ($totalSubtotal / $totalOrderSubtotal) * $totalCouponDiscount;
+                $orderDiscount = round($orderDiscount, 2);
+            }
+            
+            $subtotalAfterDiscount = $totalSubtotal - $orderDiscount;
+
             // Calculate shipping cost (per order)
             $shippingCost = $settings->shipping_cost ?? 0;
             
-            // Calculate tax
+            // Calculate tax (on subtotal after discount)
             if ($taxInclusive) {
                 // Tax is already included in product prices
-                $taxAmount = ($totalSubtotal / (100 + $taxRate)) * $taxRate;
+                $taxAmount = ($subtotalAfterDiscount / (100 + $taxRate)) * $taxRate;
             } else {
                 // Tax needs to be added
-                $taxAmount = ($totalSubtotal * $taxRate) / 100;
+                $taxAmount = ($subtotalAfterDiscount * $taxRate) / 100;
             }
 
-            $totalAmount = $totalSubtotal + $shippingCost;
+            $totalAmount = $subtotalAfterDiscount + $shippingCost;
             if (!$taxInclusive) {
                 $totalAmount += $taxAmount;
             }
@@ -649,11 +760,13 @@ class OrderController extends Controller
             $order = Order::create([
                 'order_number' => $orderNumber,
                 'customer_id' => $customer->id,
+                'coupon_id' => $couponId,
+                'coupon_code' => $couponCode,
                 'subtotal' => $totalSubtotal,
                 'original_price' => $totalOriginalPrice,
                 'paid_amount' => $paidAmount,
                 'due_amount' => $dueAmount,
-                'discount_amount' => 0,
+                'discount_amount' => $orderDiscount,
                 'shipping_cost' => $shippingCost,
                 'shipping_method' => $request->shipping_method ?? 'ship',
                 'tax_amount' => $taxAmount,
