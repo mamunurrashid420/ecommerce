@@ -31,7 +31,7 @@ class CartController extends Controller
     {
         try {
             $customer = auth('sanctum')->user();
-            
+
             $cart = Cart::with(['items.product'])
                 ->where('customer_id', $customer->id)
                 ->first();
@@ -171,7 +171,7 @@ class CartController extends Controller
 
             if ($isDropshipProduct) {
                 // Handle dropship product - fetch variant prices from product details API
-                $productCode = $request->product_code ?? (string)$request->product;
+                $productCode = $request->product_code ?? (string) $request->product;
 
                 // Fetch product details to get variant prices and product info
                 $variantPrices = [];
@@ -210,11 +210,11 @@ class CartController extends Controller
                         // The transformed data returns prices in cents (already converted to site currency)
                         // Use sale_price if available, otherwise use regular_price
                         if (isset($productData['sale_price']) && $productData['sale_price'] > 0) {
-                            $productPrice = (float)$productData['sale_price'] / 100;
+                            $productPrice = (float) $productData['sale_price'] / 100;
                         } elseif (isset($productData['regular_price'])) {
-                            $productPrice = (float)$productData['regular_price'] / 100;
+                            $productPrice = (float) $productData['regular_price'] / 100;
                         } elseif (isset($productData['price_min'])) {
-                            $productPrice = (float)$productData['price_min'] / 100;
+                            $productPrice = (float) $productData['price_min'] / 100;
                         }
 
                         // Build variant details map (sku_id -> complete variant info)
@@ -222,19 +222,19 @@ class CartController extends Controller
                         if (isset($productData['variants']) && is_array($productData['variants'])) {
                             foreach ($productData['variants'] as $variant) {
                                 if (isset($variant['sku_id'])) {
-                                    $skuId = (string)$variant['sku_id'];
+                                    $skuId = (string) $variant['sku_id'];
 
                                     // Store price for quick lookup
                                     if (isset($variant['price'])) {
-                                        $variantPrices[$skuId] = (float)$variant['price'] / 100;
+                                        $variantPrices[$skuId] = (float) $variant['price'] / 100;
                                     }
 
                                     // Store complete variant details
                                     $variantDetails[$skuId] = [
                                         'sku_id' => $skuId,
                                         'spec_id' => $variant['spec_id'] ?? '',
-                                        'price' => isset($variant['price']) ? (float)$variant['price'] / 100 : 0,
-                                        'original_price' => isset($variant['original_price']) ? (float)$variant['original_price'] / 100 : 0,
+                                        'price' => isset($variant['price']) ? (float) $variant['price'] / 100 : 0,
+                                        'original_price' => isset($variant['original_price']) ? (float) $variant['original_price'] / 100 : 0,
                                         'stock' => $variant['stock'] ?? 0,
                                         'props_names' => $variant['props_names'] ?? '',
                                     ];
@@ -301,7 +301,7 @@ class CartController extends Controller
                 $variantInfo = null; // Complete variant information
 
                 if ($isDropshipProduct && !empty($variantPrices)) {
-                    $variationId = (string)$variation['id'];
+                    $variationId = (string) $variation['id'];
                     if (isset($variantPrices[$variationId])) {
                         $variantPrice = $variantPrices[$variationId];
                     }
@@ -411,10 +411,10 @@ class CartController extends Controller
             $cart->load('items');
             $this->applyCartDiscount($cart);
             $cart->load('items');
-            
+
             // Recalculate totals with discount
             $totals = $this->calculateCartTotals($cart);
-            
+
             // Update added items with discounted prices
             $updatedAddedItems = [];
             foreach ($addedItems as $addedItem) {
@@ -574,17 +574,20 @@ class CartController extends Controller
                     $cartItem->subtotal = $newQuantity * $cartItem->product_price;
                     $cartItem->save();
                 } else {
+                    // Calculate price with margin and currency rate
+                    $finalPrice = $this->convertPrice((float) $request->product_price);
+
                     $cartItem = CartItem::create([
                         'cart_id' => $cart->id,
                         'product_id' => null,
                         'product_code' => $request->product_code,
                         'product_name' => $request->product_name,
-                        'product_price' => $request->product_price,
-                        'original_price' => $request->product_price, // Store original price
+                        'product_price' => $finalPrice,
+                        'original_price' => $finalPrice, // Store refined price
                         'product_image' => $request->product_image,
                         'product_sku' => $request->product_sku,
                         'quantity' => $request->quantity,
-                        'subtotal' => $request->quantity * $request->product_price,
+                        'subtotal' => $request->quantity * $finalPrice,
                     ]);
                 }
             }
@@ -595,10 +598,10 @@ class CartController extends Controller
             $cart->load('items');
             $this->applyCartDiscount($cart);
             $cart->load('items');
-            
+
             // Recalculate totals with discount
             $totals = $this->calculateCartTotals($cart);
-            
+
             // Reload cart item to get updated price
             $cartItem->refresh();
 
@@ -857,7 +860,7 @@ class CartController extends Controller
             if ($cartItem->original_price === null) {
                 $cartItem->original_price = $cartItem->product_price;
             }
-            
+
             // Update quantity and subtotal
             $cartItem->quantity = $request->quantity;
             $cartItem->subtotal = $request->quantity * $cartItem->product_price;
@@ -868,10 +871,10 @@ class CartController extends Controller
             $cart->load('items');
             $this->applyCartDiscount($cart);
             $cart->load('items');
-            
+
             // Recalculate totals with discount
             $totals = $this->calculateCartTotals($cart);
-            
+
             // Reload cart item to get updated price
             $cartItem->refresh();
 
@@ -928,7 +931,7 @@ class CartController extends Controller
             $cart->load('items');
             $this->applyCartDiscount($cart);
             $cart->load('items');
-            
+
             // Recalculate totals with discount
             $totals = $this->calculateCartTotals($cart);
 
@@ -1011,10 +1014,10 @@ class CartController extends Controller
                 if ($item->original_price === null) {
                     $item->original_price = $item->product_price;
                 }
-                
+
                 // Calculate discounted price from original price
                 $discountedPrice = $item->original_price * (1 - ($discountPercentage / 100));
-                
+
                 // Update the item price and recalculate subtotal
                 $item->product_price = round($discountedPrice, 2);
                 $item->subtotal = round($item->quantity * $discountedPrice, 2);
@@ -1046,22 +1049,22 @@ class CartController extends Controller
     private function calculateCartTotals(Cart $cart): array
     {
         $cart->load('items');
-        
+
         // Apply discount if applicable
         $this->applyCartDiscount($cart);
-        
+
         // Reload to get updated prices
         $cart->load('items');
-        
+
         $settings = SiteSetting::getInstance();
         $minItemNumber = $settings->min_item_number_discount ?? null;
         $discountPercentage = $settings->discount_percentage_on_item ?? null;
-        
+
         $totalItems = $cart->items->sum('quantity');
         $subtotal = $cart->items->sum('subtotal');
         $discountApplied = false;
         $discountAmount = 0;
-        
+
         // Calculate discount amount if applicable
         if ($minItemNumber !== null && $discountPercentage !== null && $discountPercentage > 0 && $totalItems >= $minItemNumber) {
             $discountApplied = true;
@@ -1073,7 +1076,7 @@ class CartController extends Controller
             }
             $discountAmount = $originalSubtotal - $subtotal;
         }
-        
+
         return [
             'subtotal' => round($subtotal, 2),
             'total' => round($subtotal, 2),
@@ -1107,7 +1110,7 @@ class CartController extends Controller
         $convertedPrice = $cnyPrice * $currencyRate;
 
         // Apply price margin (percentage)
-        $finalPrice = $convertedPrice * (1 + ($priceMargin / 100));
+        $finalPrice = $convertedPrice * (1 + ($priceMargin));
 
         return round($finalPrice, 2);
     }
