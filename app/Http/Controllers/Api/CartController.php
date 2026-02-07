@@ -574,20 +574,17 @@ class CartController extends Controller
                     $cartItem->subtotal = $newQuantity * $cartItem->product_price;
                     $cartItem->save();
                 } else {
-                    // Calculate price with margin and currency rate
-                    $finalPrice = $this->convertPrice((float) $request->product_price);
-
                     $cartItem = CartItem::create([
                         'cart_id' => $cart->id,
                         'product_id' => null,
                         'product_code' => $request->product_code,
                         'product_name' => $request->product_name,
-                        'product_price' => $finalPrice,
-                        'original_price' => $finalPrice, // Store refined price
+                        'product_price' => $request->product_price,
+                        'original_price' => $request->product_price, // Store original price
                         'product_image' => $request->product_image,
                         'product_sku' => $request->product_sku,
                         'quantity' => $request->quantity,
-                        'subtotal' => $request->quantity * $finalPrice,
+                        'subtotal' => $request->quantity * $request->product_price,
                     ]);
                 }
             }
@@ -1110,9 +1107,10 @@ class CartController extends Controller
         $convertedPrice = $cnyPrice * $currencyRate;
 
         // Apply price margin (percentage)
-        $finalPrice = $convertedPrice * (1 + ($priceMargin));
+        $finalPrice = $convertedPrice * (1 + ($priceMargin / 100));
 
-        return round($finalPrice, 2);
+        // Round up to the nearest whole dollar
+        return ceil($finalPrice);
     }
 
     /**
