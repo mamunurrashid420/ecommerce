@@ -62,18 +62,65 @@ class CartController extends Controller
                 'data' => [
                     'cart_id' => $cart->id,
                     'items' => $cart->items->map(function ($item) {
+                        // Format variations to match frontend expectations
+                        $variations = $item->variations;
+                        $productSku = $item->product_sku;
+                        $productPrice = $item->product_price;
+                        
+                        if ($variations && is_array($variations) && !empty($variations)) {
+                            // Ensure variations has the correct structure
+                            // Convert price to number format (ensure it's a float, not string)
+                            if (isset($variations['price'])) {
+                                $variations['price'] = (float) $variations['price'];
+                                // Use variant price as product_price for display
+                                // Format as string with 2 decimal places to match expected format
+                                $productPrice = number_format($variations['price'], 2, '.', '');
+                            }
+                            if (isset($variations['original_price'])) {
+                                $variations['original_price'] = (float) $variations['original_price'];
+                            }
+                            // Ensure all required fields are present
+                            if (!isset($variations['id']) && isset($variations['sku_id'])) {
+                                $variations['id'] = $variations['sku_id'];
+                            }
+                            if (!isset($variations['sku_id']) && isset($variations['id'])) {
+                                $variations['sku_id'] = $variations['id'];
+                            }
+                            if (!isset($variations['spec_id'])) {
+                                $variations['spec_id'] = '';
+                            }
+                            if (!isset($variations['stock'])) {
+                                $variations['stock'] = 0;
+                            }
+                            if (!isset($variations['props_names'])) {
+                                $variations['props_names'] = '';
+                            }
+                            if (!isset($variations['quantity'])) {
+                                $variations['quantity'] = $item->quantity;
+                            }
+                            
+                            // Set product_sku from variations if not already set
+                            // This is important for frontend grouping by product_code::product_sku
+                            if (empty($productSku) && isset($variations['sku_id'])) {
+                                $productSku = $variations['sku_id'];
+                            }
+                        } else {
+                            // Return null if variations is empty or invalid
+                            $variations = null;
+                        }
+                        
                         return [
                             'id' => $item->id,
                             'product_id' => $item->product_id,
                             'product_code' => $item->product_code,
                             'product_name' => $item->product_name,
-                            'product_price' => $item->product_price,
+                            'product_price' => $productPrice,
                             'product_image' => $item->product_image,
                             'product_image_url' => $item->product_image_url,
-                            'product_sku' => $item->product_sku,
+                            'product_sku' => $productSku,
                             'quantity' => $item->quantity,
                             'subtotal' => $item->subtotal,
-                            'variations' => $item->variations,
+                            'variations' => $variations,
                         ];
                     }),
                     'total_items' => $totals['total_items'],
