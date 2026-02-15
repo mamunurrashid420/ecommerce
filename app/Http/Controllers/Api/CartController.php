@@ -372,8 +372,8 @@ class CartController extends Controller
                 }
 
                 if ($cartItem) {
-                    // Update existing cart item
-                    $newQuantity = $cartItem->quantity + $variation['quantity'];
+                    // Update existing cart item - set quantity to the specified variation quantity
+                    $newQuantity = $variation['quantity'];
 
                     // Only check stock for local products
                     if (!$isDropshipProduct && $product->stock_quantity < $newQuantity) {
