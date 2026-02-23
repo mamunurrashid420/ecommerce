@@ -6,6 +6,7 @@ use Illuminate\Database\Seeder;
 use App\Models\District;
 use App\Models\Upazila;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DistrictUpazilaSeeder extends Seeder
 {
@@ -15,9 +16,15 @@ class DistrictUpazilaSeeder extends Seeder
     public function run(): void
     {
         DB::transaction(function () {
-            // Clear existing data
+            // Disable foreign key checks temporarily
+            Schema::disableForeignKeyConstraints();
+            
+            // Clear existing data (order matters due to foreign keys)
             Upazila::truncate();
             District::truncate();
+            
+            // Re-enable foreign key checks
+            Schema::enableForeignKeyConstraints();
 
             // Bangladesh Districts and Upazillas Data
             $data = [

@@ -1243,6 +1243,268 @@ class OrderService
     }
 
     /**
+     * Bulk update partial payment for multiple orders
+     * Uses the existing paid_amount from each order (submitted by customer)
+     * 
+     * @param array $orderIds
+     * @return array
+     * @throws Exception
+     */
+    public function bulkUpdatePartialPayment(array $orderIds): array
+    {
+        DB::beginTransaction();
+        
+        try {
+            $orders = Order::lockForUpdate()->whereIn('id', $orderIds)->get();
+            
+            if ($orders->isEmpty()) {
+                throw new Exception('No orders found');
+            }
+            
+            $updated = [];
+            $failed = [];
+            
+            foreach ($orders as $order) {
+                try {
+                    // Use the subtotal amount as the submitted payment amount
+                    $paidAmount = $order->subtotal ?? 0;
+                    
+                    // Validate paid amount doesn't exceed total amount
+                    if ($paidAmount > $order->total_amount) {
+                        $failed[] = [
+                            'order_id' => $order->id,
+                            'order_number' => $order->order_number,
+                            'reason' => 'Subtotal amount cannot exceed total amount'
+                        ];
+                        continue;
+                    }
+                    
+                    // Skip if no subtotal amount
+                    if ($paidAmount <= 0) {
+                        $failed[] = [
+                            'order_id' => $order->id,
+                            'order_number' => $order->order_number,
+                            'reason' => 'No subtotal amount found'
+                        ];
+                        continue;
+                    }
+                    
+                    $oldPaidAmount = $order->paid_amount ?? 0;
+                    // Set paid_amount to subtotal and update due_amount
+                    $order->paid_amount = $paidAmount;
+                    $order->due_amount = $order->total_amount - $paidAmount;
+                    
+                    // Update payment status
+                    if ($paidAmount >= $order->total_amount) {
+                        $order->payment_status = 'paid';
+                        $order->paid_at = now();
+                    } elseif ($paidAmount > 0) {
+                        $order->payment_status = 'partially_paid';
+                    } else {
+                        $order->payment_status = 'pending';
+                    }
+                    
+                    // Update order status to partially_paid if payment is partial
+                    // Allow status update from pending, pending_payment, or pending_payment_verification
+                    $oldStatus = $order->status;
+                    $shouldUpdateStatus = $paidAmount > 0 && 
+                                        $paidAmount < $order->total_amount && 
+                                        in_array($order->status, ['pending', 'pending_payment', 'pending_payment_verification']);
+                    
+                    if ($shouldUpdateStatus) {
+                        $order->status = 'partially_paid';
+                        
+                        // Record status change
+                        OrderStatusHistory::create([
+                            'order_id' => $order->id,
+                            'old_status' => $oldStatus,
+                            'new_status' => 'partially_paid',
+                            'changed_by_type' => 'admin',
+                            'changed_by_id' => auth()->id(),
+                            'notes' => 'Bulk partial payment approval',
+                        ]);
+                    }
+                    
+                    $order->save();
+                    
+                    $updated[] = [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'old_paid_amount' => $oldPaidAmount,
+                        'new_paid_amount' => $paidAmount,
+                    ];
+                    
+                } catch (Exception $e) {
+                    $failed[] = [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'reason' => $e->getMessage()
+                    ];
+                    Log::error('Failed to update partial payment for order', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+            
+            DB::commit();
+            
+            // Generate invoices for partially_paid orders
+            foreach ($updated as $update) {
+                try {
+                    $order = Order::with(['customer', 'orderItems', 'coupon'])->find($update['order_id']);
+                    if ($order) {
+                        // Generate invoice if:
+                        // 1. Order status is partially_paid (regardless of whether it was just updated), OR
+                        // 2. Payment status is partially_paid and order doesn't have invoice, OR
+                        // 3. Invoice is HTML format (needs to be regenerated as PDF)
+                        $isPartiallyPaid = $order->status === 'partially_paid' || $order->payment_status === 'partially_paid';
+                        $shouldGenerateInvoice = $isPartiallyPaid && 
+                                               (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'));
+                        
+                        if ($shouldGenerateInvoice) {
+                            // Delete old invoice if exists
+                            if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
+                                Storage::disk('public')->delete($order->invoice_path);
+                            }
+                            $invoicePath = $this->invoiceService->generateInvoice($order);
+                            $order->invoice_path = $invoicePath;
+                            $order->save();
+                        }
+                    }
+                } catch (Exception $e) {
+                    Log::warning('Failed to generate invoice for order', [
+                        'order_id' => $update['order_id'],
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+            
+            return [
+                'success' => true,
+                'message' => count($updated) . ' order(s) updated successfully',
+                'updated' => $updated,
+                'failed' => $failed,
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Bulk partial payment update failed', [
+                'order_ids' => $orderIds,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Bulk make paid payment status for multiple orders
+     * 
+     * @param array $orderIds
+     * @return array
+     * @throws Exception
+     */
+    public function bulkMakePaid(array $orderIds): array
+    {
+        DB::beginTransaction();
+        
+        try {
+            $orders = Order::lockForUpdate()->whereIn('id', $orderIds)->get();
+            
+            if ($orders->isEmpty()) {
+                throw new Exception('No orders found');
+            }
+            
+            $updated = [];
+            $failed = [];
+            
+            foreach ($orders as $order) {
+                try {
+                    $oldPaymentStatus = $order->payment_status;
+                    $wasPartiallyPaid = $order->payment_status === 'partially_paid' || $order->status === 'partially_paid';
+                    
+                    // Set paid amount to total amount if not already set
+                    if ($order->paid_amount < $order->total_amount) {
+                        $order->paid_amount = $order->total_amount;
+                    }
+                    $order->due_amount = 0;
+                    $order->payment_status = 'paid';
+                    $order->paid_at = now();
+                    
+                    $order->save();
+                    
+                    $updated[] = [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'old_payment_status' => $oldPaymentStatus,
+                        'new_payment_status' => 'paid',
+                        'was_partially_paid' => $wasPartiallyPaid,
+                    ];
+                    
+                } catch (Exception $e) {
+                    $failed[] = [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'reason' => $e->getMessage()
+                    ];
+                    Log::error('Failed to make order paid', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+            
+            DB::commit();
+            
+            // Generate invoices for orders that don't have one or were partially paid
+            foreach ($updated as $update) {
+                try {
+                    $order = Order::with(['customer', 'orderItems', 'coupon'])->find($update['order_id']);
+                    if ($order) {
+                        // Generate invoice if:
+                        // 1. Order doesn't have an invoice, OR
+                        // 2. Order was partially paid and now fully paid (regenerate invoice), OR
+                        // 3. Invoice is HTML format (needs to be regenerated as PDF)
+                        $shouldGenerateInvoice = empty($order->invoice_path) || 
+                                                $update['was_partially_paid'] || 
+                                                (str_ends_with($order->invoice_path, '.html'));
+                        
+                        if ($shouldGenerateInvoice) {
+                            // Delete old invoice if exists
+                            if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
+                                Storage::disk('public')->delete($order->invoice_path);
+                            }
+                            $invoicePath = $this->invoiceService->generateInvoice($order);
+                            $order->invoice_path = $invoicePath;
+                            $order->save();
+                        }
+                    }
+                } catch (Exception $e) {
+                    Log::warning('Failed to generate invoice for order in bulk make paid', [
+                        'order_id' => $update['order_id'],
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+            
+            return [
+                'success' => true,
+                'message' => count($updated) . ' order(s) updated successfully',
+                'updated' => $updated,
+                'failed' => $failed,
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Bulk make paid failed', [
+                'order_ids' => $orderIds,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Generate unique order number
      * 
      * @return string

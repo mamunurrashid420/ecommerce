@@ -348,6 +348,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/orders/stats', [OrderController::class, 'stats']);
         Route::get('/orders/pending-cancellations', [OrderController::class, 'pendingCancellations']);
         Route::get('/orders/status-transitions', [OrderController::class, 'getStatusTransitions']);
+        Route::post('/orders/bulk-partial-payment', [OrderController::class, 'bulkUpdatePartialPayment']);
+        Route::post('/orders/bulk-make-paid', [OrderController::class, 'bulkMakePaid']);
         // Routes with additional path segments must come before single parameter routes
         Route::get('/orders/{order}/next-statuses', [OrderController::class, 'getNextStatuses'])
             ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');

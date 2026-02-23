@@ -588,6 +588,68 @@ class OrderController extends Controller
     }
 
     /**
+     * Bulk update partial payment (Admin only)
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function bulkUpdatePartialPayment(Request $request)
+    {
+        try {
+            $request->validate([
+                'order_ids' => 'required|array|min:1',
+                'order_ids.*' => 'required|integer|exists:orders,id',
+            ]);
+
+            $result = $this->orderService->bulkUpdatePartialPayment($request->order_ids);
+
+            return response()->json($result);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Bulk make paid payment status (Admin only)
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function bulkMakePaid(Request $request)
+    {
+        try {
+            $request->validate([
+                'order_ids' => 'required|array|min:1',
+                'order_ids.*' => 'required|integer|exists:orders,id',
+            ]);
+
+            $result = $this->orderService->bulkMakePaid($request->order_ids);
+
+            return response()->json($result);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
      * Get authenticated customer
      * 
      * @return Customer
