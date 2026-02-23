@@ -222,6 +222,9 @@ Route::middleware('auth.any')->group(function () {
     // Exclude 'stats' and 'pending-cancellations' from matching as order ID
     Route::get('/orders/{order}', [OrderController::class, 'show'])
         ->where('order', '^(?!stats$|pending-cancellations$).*$');
+    // Invoice view route - supports token from query parameter for new tab opening
+    Route::get('/orders/{order}/invoice/view', [OrderController::class, 'viewInvoice'])
+        ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
 });
 
 // Customer-only order routes - use customer middleware
@@ -358,6 +361,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/orders/{order}/approve-cancellation', [OrderController::class, 'approveCancellation'])
             ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
         Route::post('/orders/{order}/reject-cancellation', [OrderController::class, 'rejectCancellation'])
+            ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
+        Route::get('/orders/{order}/invoice/download', [OrderController::class, 'downloadInvoice'])
             ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
         // Exclude 'stats', 'pending-cancellations', and 'status-transitions' from matching as order ID
         Route::put('/orders/{order}', [OrderController::class, 'update'])

@@ -25,9 +25,13 @@
         .header {
             display: flex;
             justify-content: space-between;
+            align-items: flex-start;
             margin-bottom: 30px;
             padding-bottom: 20px;
             border-bottom: 2px solid #333;
+        }
+        .company-info {
+            flex: 1;
         }
         .company-info h1 {
             font-size: 24px;
@@ -40,6 +44,7 @@
         }
         .invoice-info {
             text-align: right;
+            flex: 1;
         }
         .invoice-info h2 {
             font-size: 20px;
@@ -53,18 +58,25 @@
         .billing-section {
             width: 100%;
             margin-bottom: 30px;
-            border-collapse: separate;
-            border-spacing: 10px;
+            border-collapse: collapse;
+            border-spacing: 0;
         }
         .billing-section td {
             padding: 0;
+            vertical-align: top;
+        }
+        .billing-section td:first-child {
+            padding-right: 10px;
+        }
+        .billing-section td:last-child {
+            padding-left: 10px;
         }
         .billing-box {
             width: 100%;
             padding: 15px;
             background: #f9f9f9;
             border-radius: 5px;
-            vertical-align: top;
+            box-sizing: border-box;
         }
         .billing-box h3 {
             font-size: 14px;
@@ -173,37 +185,41 @@
 
         <table class="billing-section">
             <tr>
-                <td class="billing-box" style="width: 50%;">
-                    <h3>Bill To:</h3>
-                    <p><strong>{{ $customer->name }}</strong></p>
-                    <p>{{ $customer->phone }}</p>
-                    @if($customer->email)
-                        <p>{{ $customer->email }}</p>
-                    @endif
-                    @if($customer->address)
-                        <p>{{ $customer->address }}</p>
-                    @endif
+                <td style="width: 50%;">
+                    <div class="billing-box">
+                        <h3>Bill To:</h3>
+                        <p><strong>{{ $customer->name }}</strong></p>
+                        <p>{{ $customer->phone }}</p>
+                        @if($customer->email)
+                            <p>{{ $customer->email }}</p>
+                        @endif
+                        @if($customer->address)
+                            <p>{{ $customer->address }}</p>
+                        @endif
+                    </div>
                 </td>
-                <td class="billing-box" style="width: 50%;">
-                    <h3>Shipping Address:</h3>
-                    @php
-                        $shippingAddress = is_string($order->shipping_address) 
-                            ? json_decode($order->shipping_address, true) 
-                            : $order->shipping_address;
-                    @endphp
-                    @if(is_array($shippingAddress))
-                        <p><strong>{{ $shippingAddress['name'] ?? $customer->name }}</strong></p>
-                        <p>{{ $shippingAddress['phone'] ?? $customer->phone }}</p>
-                        <p>{{ $shippingAddress['address'] ?? '' }}</p>
-                        @if(isset($shippingAddress['district']))
-                            <p>{{ $shippingAddress['district'] }}</p>
+                <td style="width: 50%;">
+                    <div class="billing-box">
+                        <h3>Shipping Address:</h3>
+                        @php
+                            $shippingAddress = is_string($order->shipping_address) 
+                                ? json_decode($order->shipping_address, true) 
+                                : $order->shipping_address;
+                        @endphp
+                        @if(is_array($shippingAddress))
+                            <p><strong>{{ $shippingAddress['name'] ?? $customer->name }}</strong></p>
+                            <p>{{ $shippingAddress['phone'] ?? $customer->phone }}</p>
+                            <p>{{ $shippingAddress['address'] ?? '' }}</p>
+                            @if(isset($shippingAddress['district']))
+                                <p>{{ $shippingAddress['district'] }}</p>
+                            @endif
+                            @if(isset($shippingAddress['upazila']))
+                                <p>{{ $shippingAddress['upazila'] }}</p>
+                            @endif
+                        @else
+                            <p>{{ $order->shipping_address }}</p>
                         @endif
-                        @if(isset($shippingAddress['upazila']))
-                            <p>{{ $shippingAddress['upazila'] }}</p>
-                        @endif
-                    @else
-                        <p>{{ $order->shipping_address }}</p>
-                    @endif
+                    </div>
                 </td>
             </tr>
         </table>
