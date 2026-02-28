@@ -622,10 +622,10 @@ class SiteSettingController extends Controller
                 ->featured()
                 ->select('id', 'name', 'description', 'slug', 'image_url', 'icon', 'sort_order')
                 ->withCount([
-                        'products as active_products_count' => function ($query) {
-                            $query->where('is_active', true);
-                        }
-                    ])
+                    'products as active_products_count' => function ($query) {
+                        $query->where('is_active', true);
+                    }
+                ])
                 ->orderBy('sort_order')
                 ->limit(12)
                 ->get()
@@ -644,6 +644,7 @@ class SiteSettingController extends Controller
 
             return response()->json([
                 'success' => true,
+                'message' => 'Site settings retrieved successfully',
                 'data' => [
                     'title' => $settings->title,
                     'tagline' => $settings->tagline,
