@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Dropship;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\ApiResponseTrait;
 use App\Services\DropshipService;
 use App\Models\SiteSetting;
 use App\Helpers\ChineseTranslationHelper;
@@ -16,6 +17,7 @@ use Carbon\Carbon;
 
 class ProductController extends Controller
 {
+    use ApiResponseTrait;
     protected DropshipService $dropshipService;
 
     public function __construct(DropshipService $dropshipService)
@@ -49,25 +51,25 @@ class ProductController extends Controller
     {
         $settings = SiteSetting::getInstance();
         $offer = $settings->offer_with_url;
-        
+
         if (!$offer || !isset($offer['start_date']) || !isset($offer['end_date'])) {
             return null;
         }
-        
+
         // Validate offer amount exists and is greater than 0
         if (!isset($offer['amount']) || $offer['amount'] <= 0) {
             return null;
         }
-        
+
         $now = now();
         $startDate = Carbon::parse($offer['start_date'])->startOfDay();
         $endDate = Carbon::parse($offer['end_date'])->endOfDay();
-        
+
         // Check if offer is currently active
         if ($now->between($startDate, $endDate)) {
             return $offer;
         }
-        
+
         return null; // Return null if offer is not active
     }
 
@@ -77,22 +79,22 @@ class ProductController extends Controller
     private function calculateDiscountPrice(float $originalPrice): array
     {
         $offer = $this->getCurrentOffer();
-        
+
         // Default result with no discount
         $result = [
             'discount_percentage' => 0,
             'discount_price' => $originalPrice,
         ];
-        
+
         // If no active offer, return default (no discount)
         if (!$offer) {
             return $result;
         }
-        
+
         // Calculate discount
         $discountPercentage = (float) $offer['amount'];
         $discountPrice = $originalPrice * (1 - ($discountPercentage / 100));
-        
+
         // Round down to the nearest whole dollar for discount price
         return [
             'discount_percentage' => $discountPercentage,
@@ -158,62 +160,66 @@ class ProductController extends Controller
      * Search products by keyword
      * GET /api/dropship/products?search=keyword
      */
-    public function searchProducts(Request $request): JsonResponse
+    public function searchProducts(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'search' => 'required|string|max:255',
-            // 'platform' => 'nullable|string|in:taobao,1688,tmall',
-            'page' => 'nullable|integer|min:1',
-            'page_size' => 'nullable|integer|min:1|max:100',
-            'min_price' => 'nullable|numeric|min:0',
-            'max_price' => 'nullable|numeric|min:0',
-            'sort' => 'nullable|string|in:price_asc,price_desc,sale_desc,credit_desc',
-            'lang' => 'nullable|string|max:10',
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'search' => 'required|string|max:255',
+                // 'platform' => 'nullable|string|in:taobao,1688,tmall',
+                'page' => 'nullable|integer|min:1',
+                'page_size' => 'nullable|integer|min:1|max:100',
+                'min_price' => 'nullable|numeric|min:0',
+                'max_price' => 'nullable|numeric|min:0',
+                'sort' => 'nullable|string|in:price_asc,price_desc,sale_desc,credit_desc',
+                'lang' => 'nullable|string|max:10',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
+            if ($validator->fails()) {
+                return $this->errorMessage('Validation failed', $validator->errors(), 422);
+            }
 
-        $platform = '1688'; // $request->input('platform', '1688');
-        $keyword = $request->input('search');
-        $page = $request->integer('page', 1);
-        $pageSize = $request->integer('page_size', 20);
+            $platform = '1688'; // $request->input('platform', '1688');
+            $keyword = $request->input('search');
+            $page = $request->integer('page', 1);
+            // Read page_size from request, default to 12 if not provided
+            $pageSize = $request->has('page_size') ? $request->integer('page_size') : 12;
 
-        $options = [
-            'min_price' => $request->input('min_price'),
-            'max_price' => $request->input('max_price'),
-            'sort' => $request->input('sort'),
-            'lang' => $request->input('lang', 'en'),  // Default to English
-        ];
+            // Ensure page_size is at least 1 and not more than 100
+            $pageSize = max(1, min(100, $pageSize));
 
-        $result = $this->dropshipService->searchProducts($platform, $keyword, $page, $pageSize, $options);
+            $options = [
+                'min_price' => $request->input('min_price'),
+                'max_price' => $request->input('max_price'),
+                'sort' => $request->input('sort'),
+                'lang' => $request->input('lang', 'en'),  // Default to English
+            ];
 
-        if (!$result['success']) {
-            return response()->json($result, 400);
-        }
-
-        // Transform response to match chinasource API format
-        $products = $result['data'];
-
-        // Convert prices and currency for all items
-        $products = $this->convertProductListPrices($products);
-
-        return response()->json([
-            'result' => [
+            // Log the page_size being sent for debugging
+            Log::info('ProductController::searchProducts - Request parameters', [
+                'keyword' => $keyword,
                 'page' => $page,
-                'per_page' => $pageSize,
-                'products' => $products,
-                'keywords' => [],
-                'time' => now()->toIso8601String(),
-                '_debug_discount_implementation' => 'v2.0',
-            ],
-            'image' => null,
-        ]);
+                'page_size' => $pageSize
+            ]);
+
+            $result = $this->dropshipService->searchProducts($platform, $keyword, $page, $pageSize, $options);
+
+            if (!$result['success']) {
+                return $this->errorMessage($result['message'] ?? 'Failed to search products', $result['errors'] ?? null, 400);
+            }
+
+            // Transform response to match chinasource API format
+            $products = $result['data'];
+
+            // Convert prices and currency for all items
+            $products = $this->convertProductListPrices($products);
+
+            $responseData = $products;
+
+            return $this->successMessage($responseData, 'Products fetched successfully');
+        } catch (\Exception $e) {
+
+            return $this->errorMessage('An error occurred while searching products', $e->getMessage(), 500);
+        }
     }
 
     /**
@@ -222,7 +228,7 @@ class ProductController extends Controller
      *
      * Note: Accepts both image file upload and image_url parameter
      */
-    
+
     public function searchProductsByImage(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -246,7 +252,7 @@ class ProductController extends Controller
                 'errors' => $validator->errors()->toArray(),
                 'request_data' => $request->except(['image']), // Exclude image file from log
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
@@ -273,7 +279,7 @@ class ProductController extends Controller
 
                 $absoluteFilePath = Storage::disk('public')->path($uploadedImagePath);
 
-                $searchImageUrl =  Storage::disk('public')->url($uploadedImagePath);
+                $searchImageUrl = Storage::disk('public')->url($uploadedImagePath);
 
             }
             // return response()->json([
@@ -291,7 +297,7 @@ class ProductController extends Controller
                 $searchImageUrl,
                 '/global/search/image/v2'
             );
-            
+
             // return $conversionResult['data'];
             // Check if conversion was successful
             if (empty($conversionResult['data']['image_url'])) {
@@ -300,14 +306,14 @@ class ProductController extends Controller
                     'original_url' => $searchImageUrl,
                     'conversion_result' => $conversionResult,
                 ]);
-                
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to convert image URL for search. Local image URLs must be converted before use.',
                     'error' => $conversionResult['message'] ?? 'Image conversion failed',
                 ], 400);
             }
-            
+
             // Use the converted URL (required for API to work)
             $convertedImageUrl = $conversionResult['data']['image_url'];
 
@@ -320,12 +326,7 @@ class ProductController extends Controller
                 []
             );
 
-            Log::info('Search by image result', [
-                'success' => $result['success'] ?? false,
-                'data_keys' => isset($result['data']) ? array_keys($result['data']) : [],
-                'total_count' => $result['data']['total_count'] ?? 0,
-                'items_count' => isset($result['data']['items']) ? count($result['data']['items']) : 0,
-            ]);
+
 
             if (!$result['success']) {
                 $this->logImageSearchFailure([
@@ -337,8 +338,12 @@ class ProductController extends Controller
                     'page_size' => $pageSize,
                     'lang' => $lang,
                 ]);
-                
-                return response()->json($result, 400);
+
+                return $this->errorMessage(
+                    $result['message'] ?? 'An error occurred while searching products',
+                    $result['errors'] ?? null,
+                    400
+                );
             }
 
             // Transform response to match searchProducts API format
@@ -347,7 +352,9 @@ class ProductController extends Controller
             // Convert prices and currency for all items
             $products = $this->convertProductListPrices($products);
 
-            return response()->json([
+
+
+            return $this->successMessage([
                 'result' => [
                     'page' => $page,
                     'per_page' => $pageSize,
@@ -357,7 +364,7 @@ class ProductController extends Controller
                     '_debug_discount_implementation' => 'v2.0',
                 ],
                 'image' => $convertedImageUrl,
-            ]);
+            ], 'Products fetched successfully');
 
         } catch (\Throwable $e) {
             Log::error('Image upload error', [
@@ -377,10 +384,12 @@ class ProductController extends Controller
                 'message' => 'Failed to upload image',
                 'error' => $e->getMessage(),
             ], 500);
+
+
         }
     }
-    
-    
+
+
 
     /**
      * Convert prices and currency for product list
@@ -417,12 +426,12 @@ class ProductController extends Controller
     {
         // Add debug flag to verify method is being called
         $item['_debug_discount_processed'] = true;
-        
+
         // Convert main price
         if (isset($item['price'])) {
             $originalPrice = $this->convertPrice((float) $item['price']);
             $discountInfo = $this->calculateDiscountPrice($originalPrice);
-            
+
             $item['price'] = number_format($originalPrice, 2, '.', '');
             $item['discount_percentage'] = $discountInfo['discount_percentage'];
             $item['discount_price'] = number_format($discountInfo['discount_price'], 2, '.', '');
@@ -433,7 +442,7 @@ class ProductController extends Controller
             if (isset($item['price_info']['price'])) {
                 $originalPrice = $this->convertPrice((float) $item['price_info']['price']);
                 $discountInfo = $this->calculateDiscountPrice($originalPrice);
-                
+
                 $item['price_info']['price'] = number_format($originalPrice, 2, '.', '');
                 $item['price_info']['discount_percentage'] = $discountInfo['discount_percentage'];
                 $item['price_info']['discount_price'] = number_format($discountInfo['discount_price'], 2, '.', '');
@@ -441,14 +450,14 @@ class ProductController extends Controller
             if (isset($item['price_info']['price_min'])) {
                 $originalPrice = $this->convertPrice((float) $item['price_info']['price_min']);
                 $discountInfo = $this->calculateDiscountPrice($originalPrice);
-                
+
                 $item['price_info']['price_min'] = number_format($originalPrice, 2, '.', '');
                 $item['price_info']['price_min_discount'] = number_format($discountInfo['discount_price'], 2, '.', '');
             }
             if (isset($item['price_info']['price_max'])) {
                 $originalPrice = $this->convertPrice((float) $item['price_info']['price_max']);
                 $discountInfo = $this->calculateDiscountPrice($originalPrice);
-                
+
                 $item['price_info']['price_max'] = number_format($originalPrice, 2, '.', '');
                 $item['price_info']['price_max_discount'] = number_format($discountInfo['discount_price'], 2, '.', '');
             }
@@ -466,57 +475,65 @@ class ProductController extends Controller
      */
     public function productDetails(Request $request, string $itemId)
     {
-        $lang = $request->input('lang', 'en');
-        $platform = '1688';
+        try {
+            $lang = $request->input('lang', 'en');
+            $platform = '1688';
 
-        $result = $this->dropshipService->getProduct($platform, $itemId, false, $lang, true);
+            $result = $this->dropshipService->getProduct($platform, $itemId, false, $lang, true);
 
-        if (!$result['success']) {
-            return response()->json([
-                'result' => null,
-                'error' => $result['message'] ?? 'Product not found',
-            ], 400);
-        }
-
-        // Transform to the expected format and include all original data
-        $product = $this->transformProductDetails($result['data']);
-
-        // Check if product is saved (if user is authenticated)
-        $isSaved = false;
-        $savedProductId = null;
-        
-        // Check authentication using Sanctum (token can be passed as Bearer token or via cookie)
-        if (auth('sanctum')->check()) {
-            $customer = auth('sanctum')->user();
-            // Product ID format in saved_products table is "e3pro-{item_id}"
-            $productId = $product['id'] ?? 'e3pro-' . $itemId;
-            
-            // Also try checking with just item_id in case it was saved with different format
-            $savedProduct = \App\Models\SavedProduct::where('customer_id', $customer->id)
-                ->where(function($query) use ($productId, $itemId) {
-                    $query->where('product_id', $productId)
-                          ->orWhere('product_id', 'e3pro-' . $itemId)
-                          ->orWhere('product_slug', $itemId)
-                          ->orWhere('product_slug', $productId);
-                })
-                ->first();
-            
-            if ($savedProduct) {
-                $isSaved = true;
-                $savedProductId = $savedProduct->id;
+            if (!$result['success']) {
+                return $this->errorMessage($result['message'] ?? 'Product not found', null, 400);
             }
+
+            // Transform to the expected format and include all original data
+            $product = $this->transformProductDetails($result['data']);
+
+            // Check if product is saved (if user is authenticated)
+            $isSaved = false;
+            $savedProductId = null;
+
+            // Check authentication using Sanctum (token can be passed as Bearer token or via cookie)
+            if (auth('sanctum')->check()) {
+                $customer = auth('sanctum')->user();
+                // Product ID format in saved_products table is "e3pro-{item_id}"
+                $productId = $product['id'] ?? 'e3pro-' . $itemId;
+
+                // Also try checking with just item_id in case it was saved with different format
+                $savedProduct = \App\Models\SavedProduct::where('customer_id', $customer->id)
+                    ->where(function ($query) use ($productId, $itemId) {
+                        $query->where('product_id', $productId)
+                            ->orWhere('product_id', 'e3pro-' . $itemId)
+                            ->orWhere('product_slug', $itemId)
+                            ->orWhere('product_slug', $productId);
+                    })
+                    ->first();
+
+                if ($savedProduct) {
+                    $isSaved = true;
+                    $savedProductId = $savedProduct->id;
+                }
+            }
+
+            // Add saved status to product data
+            $product['is_saved'] = $isSaved;
+            $product['saved_product_id'] = $savedProductId;
+
+            // $responseData = [
+            //     'result' => [
+            //         'product' => $product,
+            //         'time' => now()->toIso8601String(),
+            //     ],
+            // ];
+
+            return $this->successMessage($product, 'Product details fetched successfully');
+        } catch (\Exception $e) {
+            Log::error('Error in productDetails', [
+                'itemId' => $itemId,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return $this->errorMessage('An error occurred while fetching product details', $e->getMessage(), 500);
         }
-
-        // Add saved status to product data
-        $product['is_saved'] = $isSaved;
-        $product['saved_product_id'] = $savedProductId;
-
-        return response()->json([
-            'result' => [
-                'product' => $product,
-                'time' => now()->toIso8601String(),
-            ],
-        ]);
     }
 
     /**
@@ -599,10 +616,10 @@ class ProductController extends Controller
                 // Convert variant prices
                 $convertedPriceFloat = $this->convertPrice($skuPrice);
                 $convertedOriginalPriceFloat = $this->convertPrice($skuOriginalPrice);
-                
+
                 // Calculate discount for variant
                 $variantDiscountInfo = $this->calculateDiscountPrice($convertedPriceFloat);
-                
+
                 // Format prices as decimal strings with 2 decimal places (already using ceil in convertPrice and calculateDiscountPrice)
                 $convertedPrice = number_format($convertedPriceFloat, 2, '.', '');
                 $convertedOriginalPrice = number_format($convertedOriginalPriceFloat, 2, '.', '');
@@ -994,23 +1011,24 @@ class ProductController extends Controller
      */
     public function productDescription(Request $request, string $itemId): JsonResponse
     {
-        $platform = $request->input('platform', '1688');
+        try {
+            $platform = $request->input('platform', '1688');
 
-        $result = $this->dropshipService->getProductDescriptionDetails($platform, $itemId);
+            $result = $this->dropshipService->getProductDescriptionDetails($platform, $itemId);
 
-        if (!$result['success']) {
-            return response()->json([
-                'success' => false,
-                'message' => $result['message'] ?? 'Failed to fetch product description',
-                'error' => $result['message'] ?? 'Product description not found',
-            ], 400);
+            if (!$result['success']) {
+                return $this->errorMessage($result['message'] ?? 'Failed to fetch product description', null, 400);
+            }
+
+            return $this->successMessage($result['data'] ?? $result, 'Product description fetched successfully');
+        } catch (\Exception $e) {
+            Log::error('Error in productDescription', [
+                'itemId' => $itemId,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return $this->errorMessage('An error occurred while fetching product description', $e->getMessage(), 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Product description fetched successfully',
-            'data' => $result['data'] ?? $result,
-        ]);
     }
 
     /**
@@ -1296,10 +1314,10 @@ class ProductController extends Controller
 
             // Log to daily file
             $logFile = $logDirectory . '/image-search-failures-' . now()->format('Y-m-d') . '.log';
-            
+
             // Append to log file
             file_put_contents($logFile, $logContent, FILE_APPEND | LOCK_EX);
-            
+
             // Also log to Laravel log for monitoring
             Log::error('Image search failed', $logData);
         } catch (\Throwable $e) {

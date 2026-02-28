@@ -67,11 +67,15 @@ class DropshipService
      */
     public function searchProducts(string $platform, string $keyword, int $page = 1, int $pageSize = 20, array $options = []): array
     {
+        // Cap page_size at 20 (tmapi.top documented max)
+        // Note: The API might have different limits for different endpoints
+        $finalPageSize = min($pageSize, 20);
+        
         $params = [
             'apiToken' => $this->apiToken,
             'keyword' => $keyword,
             'page' => $page,
-            'page_size' => min($pageSize, 20), // tmapi.top max is 20
+            'page_size' => $finalPageSize,
         ];
 
         if (!empty($options['min_price'])) {
@@ -85,11 +89,92 @@ class DropshipService
             $params['sort'] = $options['sort'];
         }
 
-        // Use multi-language endpoint - default to English
-        $lang = $options['lang'] ?? 'en';
-        $endpoint = $lang === 'en' ? 'en/search/items' : 'search/items';
+    
+        $endpoint = 'en/search/items';
 
-        return $this->makeRequest($platform, $endpoint, $params);
+        // Log what we're sending to the API
+        Log::info('DropshipService::searchProducts - API request params', [
+            'endpoint' => $endpoint,
+            'platform' => $platform,
+            'page' => $page,
+            'page_size_requested' => $pageSize,
+            'page_size_sent' => $finalPageSize,
+            'params' => array_merge($params, ['apiToken' => '***']), // Hide token in logs
+        ]);
+
+        $result = $this->makeRequest($platform, $endpoint, $params);
+
+        // Log what the API returned
+        if (isset($result['data']['page_size'])) {
+            Log::info('DropshipService::searchProducts - API response page_size', [
+                'requested' => $finalPageSize,
+                'returned_by_api' => $result['data']['page_size'],
+                'items_count' => isset($result['data']['items']) ? count($result['data']['items']) : 0,
+            ]);
+        }
+
+        // WORKAROUND: The API has a hard limit of 10 items per page for both endpoints
+        // If more items are requested, make additional API calls and combine results
+        if ($finalPageSize > 10 && $result['success'] && isset($result['data']['items'])) {
+            $allItems = $result['data']['items'];
+            $currentPage = $page;
+            $itemsPerPage = 10; // API's actual limit per page
+            $totalNeeded = $finalPageSize;
+            
+            // Calculate how many additional pages we need
+            $pagesNeeded = ceil($totalNeeded / $itemsPerPage);
+            
+            Log::info('DropshipService::searchProducts - API limit workaround activated', [
+                'requested_items' => $finalPageSize,
+                'api_limit_per_page' => $itemsPerPage,
+                'pages_needed' => $pagesNeeded,
+                'current_page' => $currentPage,
+                'items_from_first_page' => count($allItems),
+            ]);
+            
+            // Fetch additional pages if needed
+            for ($p = 2; $p <= $pagesNeeded && count($allItems) < $totalNeeded; $p++) {
+                $pageParams = $params;
+                $pageParams['page'] = $p;
+                $pageParams['page_size'] = 10; // Always request 10 (API's max per page)
+                
+                $pageResult = $this->makeRequest($platform, $endpoint, $pageParams);
+                
+                if ($pageResult['success'] && isset($pageResult['data']['items']) && count($pageResult['data']['items']) > 0) {
+                    $pageItems = $pageResult['data']['items'];
+                    $itemsToAdd = min(count($pageItems), $totalNeeded - count($allItems));
+                    $allItems = array_merge($allItems, array_slice($pageItems, 0, $itemsToAdd));
+                    
+                    Log::info('DropshipService::searchProducts - Fetched additional page', [
+                        'page' => $p,
+                        'items_fetched' => count($pageItems),
+                        'items_added' => $itemsToAdd,
+                        'total_items_so_far' => count($allItems),
+                    ]);
+                } else {
+                    // Stop if API returns error or no more items
+                    Log::info('DropshipService::searchProducts - Stopping pagination', [
+                        'page' => $p,
+                        'reason' => !$pageResult['success'] ? 'API error' : 'No more items',
+                    ]);
+                    break;
+                }
+            }
+            
+            // Update the result with combined items
+            $result['data']['items'] = array_slice($allItems, 0, $totalNeeded);
+            $result['data']['page_size'] = count($result['data']['items']);
+            $result['data']['requested_page_size'] = $finalPageSize;
+            $result['data']['pages_fetched'] = min($pagesNeeded, $p - 1);
+            
+            Log::info('DropshipService::searchProducts - Combined results complete', [
+                'requested' => $finalPageSize,
+                'actual_returned' => count($result['data']['items']),
+                'pages_fetched' => $result['data']['pages_fetched'],
+            ]);
+        }
+
+        return $result;
     }
 
     /**
