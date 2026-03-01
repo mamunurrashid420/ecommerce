@@ -1,326 +1,462 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice - {{ $order->order_number }}</title>
+    <title>Purchase Invoice - {{ $order->order_number }}</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
         body {
-            font-family: 'DejaVu Sans', Arial, sans-serif;
-            font-size: 12px;
+            font-family: DejaVu Sans, Arial, sans-serif;
+            font-size: 11px;
             color: #333;
-            line-height: 1.6;
-        }
-        .invoice-container {
-            max-width: 800px;
-            margin: 0 auto;
+            line-height: 1.4;
+            margin: 0;
             padding: 20px;
-            background: #fff;
         }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #333;
-        }
-        .company-info {
-            flex: 1;
-        }
-        .company-info h1 {
-            font-size: 24px;
-            margin-bottom: 10px;
-            color: #333;
-        }
-        .company-info p {
-            margin: 3px 0;
-            color: #666;
-        }
-        .invoice-info {
-            text-align: right;
-            flex: 1;
-        }
-        .invoice-info h2 {
-            font-size: 20px;
-            margin-bottom: 10px;
-            color: #333;
-        }
-        .invoice-info p {
-            margin: 3px 0;
-            color: #666;
-        }
-        .billing-section {
-            width: 100%;
-            margin-bottom: 30px;
-            border-collapse: collapse;
-            border-spacing: 0;
-        }
-        .billing-section td {
-            padding: 0;
-            vertical-align: top;
-        }
-        .billing-section td:first-child {
-            padding-right: 10px;
-        }
-        .billing-section td:last-child {
-            padding-left: 10px;
-        }
-        .billing-box {
-            width: 100%;
-            padding: 15px;
-            background: #f9f9f9;
-            border-radius: 5px;
-            box-sizing: border-box;
-        }
-        .billing-box h3 {
-            font-size: 14px;
-            margin-bottom: 10px;
-            color: #333;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 5px;
-        }
-        .billing-box p {
-            margin: 5px 0;
-            color: #666;
-        }
+
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
         }
-        table th {
-            background: #333;
-            color: #fff;
-            padding: 10px;
-            text-align: left;
-            font-weight: bold;
-        }
-        table td {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-        }
-        table tr:nth-child(even) {
-            background: #f9f9f9;
-        }
+
         .text-right {
             text-align: right;
         }
+
         .text-center {
             text-align: center;
         }
-        .summary {
-            margin-top: 20px;
-            margin-left: auto;
-            width: 300px;
+
+        .text-left {
+            text-align: left;
         }
-        .summary-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #ddd;
+
+        .header {
+            margin-bottom: 30px;
         }
-        .summary-row.total {
+
+        .header table {
+            width: 100%;
+        }
+
+        .header td {
+            vertical-align: top;
+        }
+
+        .logo {
+            width: 100px;
+            height: 100px;
+            display: inline-block;
+        }
+
+        .invoice-title {
+            font-size: 28px;
             font-weight: bold;
+            margin-bottom: 10px;
+            text-align: right;
+        }
+
+        .invoice-details {
+            text-align: right;
+            color: #555;
+        }
+
+        .invoice-details td {
+            padding: 3px 0;
+        }
+
+        .address-section {
+            margin-bottom: 30px;
+        }
+
+        .address-section td {
+            vertical-align: top;
+            width: 50%;
+        }
+
+        .address-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .address-content {
+            color: #555;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .address-content .company-name {
             font-size: 16px;
-            border-top: 2px solid #333;
-            border-bottom: 2px solid #333;
-            padding: 12px 0;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .items-table {
+            margin-bottom: 20px;
+            width: 100%;
+        }
+
+        .items-table th {
+            background-color: #25547B;
+            color: #fff;
+            padding: 10px;
+            font-size: 10px;
+            text-transform: uppercase;
+            font-weight: normal;
+        }
+
+        .items-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            vertical-align: top;
+        }
+
+        .item-desc {
+            color: #333;
+            margin-bottom: 3px;
+        }
+
+        .item-meta {
+            font-size: 9px;
+            color: #777;
+        }
+
+        .total-payable {
+            background-color: #f5f5f5;
+            padding: 10px;
+            margin-bottom: 30px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .total-payable table {
+            width: 100%;
+        }
+
+        .total-payable td {
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .footer-section {
+            width: 100%;
             margin-top: 10px;
         }
-        .summary-label {
-            font-weight: bold;
+
+        .footer-section td {
+            vertical-align: top;
         }
-        .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-            text-align: center;
-            color: #666;
+
+        .payment-info {
+            width: 50%;
+            padding-right: 20px;
+        }
+
+        .payment-info h4 {
+            font-size: 14px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .payment-info .we-accept {
             font-size: 11px;
+            color: #555;
+            margin-bottom: 8px;
         }
-        .status-badge {
+
+        .payment-logos {
+            margin-bottom: 20px;
+        }
+
+        .payment-logo {
             display: inline-block;
-            padding: 5px 10px;
-            border-radius: 3px;
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 10px;
+            margin-right: 5px;
             font-weight: bold;
+        }
+
+        .payment-logo.bkash {
+            color: #e2136e;
+        }
+
+        .payment-logo.nagad {
+            color: #f37021;
+        }
+
+        .note-sec h4 {
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .note-sec p {
+            font-size: 10px;
+            color: #777;
+            line-height: 1.5;
+        }
+
+        .summary-table {
+            width: 100%;
+        }
+
+        .summary-table td {
+            padding: 5px 0;
             font-size: 11px;
         }
-        .status-partially-paid {
-            background: #ffc107;
+
+        .summary-table .label {
+            text-align: right;
+            padding-right: 20px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .summary-table .value {
+            text-align: left;
+            width: 100px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .summary-table .total-row td {
+            font-size: 13px;
+            color: #333;
+        }
+
+        .summary-table .total-row .label {
             color: #000;
+        }
+
+        .balance-row td {
+            background-color: #f5f5f5;
+            padding: 8px 0;
+            margin-top: 5px;
+        }
+
+        .balance-row .label,
+        .balance-row .value {
+            padding-left: 10px;
+            padding-right: 10px;
+            color: #333;
         }
     </style>
 </head>
-<body>
-    <div class="invoice-container">
-        <div class="header">
-            <div class="company-info">
-                <h1>{{ $siteSettings->business_name ?? $siteSettings->title ?? 'e3shopbd' }}</h1>
-                <p>{{ $siteSettings->address ?? '' }}</p>
-                @if($siteSettings->secondary_address)
-                    <p>{{ $siteSettings->secondary_address }}</p>
-                @endif
-                @if($siteSettings->contact_number)
-                    <p>Phone: {{ $siteSettings->contact_number }}</p>
-                @endif
-                @if($siteSettings->email)
-                    <p>Email: {{ $siteSettings->email }}</p>
-                @endif
-            </div>
-            <div class="invoice-info">
-                <h2>INVOICE</h2>
-                <p><strong>Invoice #:</strong> {{ $order->order_number }}</p>
-                <p><strong>Date:</strong> {{ $order->created_at->format('d M Y') }}</p>
-                <p><strong>Status:</strong> 
-                    <span class="status-badge status-partially-paid">{{ strtoupper(str_replace('_', ' ', $order->status)) }}</span>
-                </p>
-            </div>
-        </div>
 
-        <table class="billing-section">
+<body>
+    <div class="header">
+        <table>
             <tr>
                 <td style="width: 50%;">
-                    <div class="billing-box">
-                        <h3>Bill To:</h3>
-                        <p><strong>{{ $customer->name }}</strong></p>
-                        <p>{{ $customer->phone }}</p>
-                        @if($customer->email)
-                            <p>{{ $customer->email }}</p>
+                    @if(isset($siteSettings->logo) && $siteSettings->logo)
+                        <img src="{{ url($siteSettings->logo) }}" class="logo" alt="Logo"
+                            style="max-height:100px; max-width:100px;">
+                    @else
+                        <!-- Placeholder Logo -->
+                        <div
+                            style="width: 90px; height: 90px; border-radius: 50%; border: 4px solid #f37021; position: relative;">
+                            <div
+                                style="font-size: 40px; font-weight: bold; color: #25547B; position: absolute; top: 8px; left: 24px;">
+                                e</div>
+                            <div
+                                style="font-size: 12px; font-weight: bold; color: #25547B; position: absolute; bottom: 12px; left: 14px;">
+                                E3 SHOP</div>
+                        </div>
+                    @endif
+                </td>
+                <td style="width: 50%;" class="text-right">
+                    <div class="invoice-title">Purchase Invoice</div>
+                    <table class="invoice-details" style="float: right; width: 250px;">
+                        <tr>
+                            <td class="text-left" style="color: #777;">Invoice no:</td>
+                            <td class="text-right" style="color: #333; font-weight: bold;">{{ $order->order_number }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-left" style="color: #777;">Invoice date:</td>
+                            <td class="text-right" style="color: #333;">
+                                {{ $order->created_at->format('D d M, Y h:i a') }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left" style="color: #777;">Due:</td>
+                            <td class="text-right" style="color: #333;">
+                                {{ $order->created_at->addDays(7)->format('F j, Y') }}</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="address-section">
+        <table>
+            <tr>
+                <td style="width: 50%;">
+                    <div class="address-title text-left">From</div>
+                    <div class="address-content text-left">
+                        <div class="company-name">
+                            {{ strtoupper($siteSettings->business_name ?? $siteSettings->title ?? 'E3 SHOPBD') }}</div>
+                        @if(isset($siteSettings->contact_person))
+                            <div>{{ $siteSettings->contact_person }}</div>
                         @endif
-                        @if($customer->address)
-                            <p>{{ $customer->address }}</p>
+                        @if(isset($siteSettings->email))
+                            <div>{{ $siteSettings->email }}</div>
                         @endif
+                        @if(isset($siteSettings->contact_number))
+                            <div>{{ $siteSettings->contact_number }}</div>
+                        @endif
+                        @if(isset($siteSettings->website))
+                            <div>{{ $siteSettings->website }}</div>
+                        @endif
+                        <div style="max-width: 200px;">{{ $siteSettings->address ?? 'First Str. 28-32, Chicago, USA' }}
+                        </div>
                     </div>
                 </td>
-                <td style="width: 50%;">
-                    <div class="billing-box">
-                        <h3>Shipping Address:</h3>
-                        @php
-                            $shippingAddress = is_string($order->shipping_address) 
-                                ? json_decode($order->shipping_address, true) 
-                                : $order->shipping_address;
-                        @endphp
-                        @if(is_array($shippingAddress))
-                            <p><strong>{{ $shippingAddress['name'] ?? $customer->name }}</strong></p>
-                            <p>{{ $shippingAddress['phone'] ?? $customer->phone }}</p>
-                            <p>{{ $shippingAddress['address'] ?? '' }}</p>
-                            @if(isset($shippingAddress['district']))
-                                <p>{{ $shippingAddress['district'] }}</p>
-                            @endif
-                            @if(isset($shippingAddress['upazila']))
-                                <p>{{ $shippingAddress['upazila'] }}</p>
-                            @endif
-                        @else
-                            <p>{{ $order->shipping_address }}</p>
+                <td style="width: 50%;" class="text-right">
+                    <div class="address-title">Bill to</div>
+                    <div class="address-content">
+                        <div class="company-name">{{ $customer->name }}</div>
+                        <div>Customer ID: {{ str_pad($customer->id, 10, '#', STR_PAD_LEFT) }}</div>
+                        @if($customer->email)
+                            <div>{{ $customer->email }}</div>
                         @endif
+                        <div>{{ $customer->phone }}</div>
+                        @php
+                            $shippingAddress = is_string($order->shipping_address) ? json_decode($order->shipping_address, true) : $order->shipping_address;
+                            $addressText = is_array($shippingAddress) ? ($shippingAddress['address'] ?? '') . ', ' . ($shippingAddress['district'] ?? '') . ', ' . ($shippingAddress['upazila'] ?? '') : $order->shipping_address;
+                        @endphp
+                        <div style="max-width: 250px; float: right;">
+                            {{ $addressText ?: '4517 washington ave. manchester, kentucky 39495' }}</div>
+                        <div style="clear: both;"></div>
                     </div>
                 </td>
             </tr>
         </table>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>#</th>
-                    <th>Product</th>
-                    <th class="text-center">Quantity</th>
-                    <th class="text-right">Unit Price</th>
-                    <th class="text-right">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach($items as $index => $item)
-                <tr>
-                    <td>{{ $index + 1 }}</td>
-                    <td>
-                        <strong>{{ $item->product_name ?? 'Product' }}</strong>
-                        @if($item->product_code)
-                            <br><small>Code: {{ $item->product_code }}</small>
-                        @endif
-                        @if($item->product_sku)
-                            <br><small>SKU: {{ $item->product_sku }}</small>
-                        @endif
-                    </td>
-                    <td class="text-center">{{ $item->quantity }}</td>
-                    <td class="text-right">{{ number_format($item->price, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</td>
-                    <td class="text-right">{{ number_format($item->total, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</td>
-                </tr>
-                @endforeach
-            </tbody>
-        </table>
-
-        <div class="summary">
-            <div class="summary-row">
-                <span class="summary-label">Subtotal:</span>
-                <span>{{ number_format($order->subtotal, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</span>
-            </div>
-            @if($order->discount_amount > 0)
-            <div class="summary-row">
-                <span class="summary-label">Discount 
-                    @if($order->coupon_code)
-                        ({{ $order->coupon_code }})
-                    @endif:
-                </span>
-                <span>-{{ number_format($order->discount_amount, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</span>
-            </div>
-            @endif
-            @if($order->shipping_cost > 0)
-            <div class="summary-row">
-                <span class="summary-label">Shipping Cost:</span>
-                <span>{{ number_format($order->shipping_cost, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</span>
-            </div>
-            @endif
-            @if($order->tax_amount > 0)
-            <div class="summary-row">
-                <span class="summary-label">Tax 
-                    @if($order->tax_rate)
-                        ({{ $order->tax_rate }}%)
-                    @endif:
-                </span>
-                <span>{{ number_format($order->tax_amount, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</span>
-            </div>
-            @endif
-            <div class="summary-row total">
-                <span>Total Amount:</span>
-                <span>{{ number_format($order->total_amount, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</span>
-            </div>
-            @if($order->paid_amount > 0)
-            <div class="summary-row" style="margin-top: 10px;">
-                <span class="summary-label">Paid Amount:</span>
-                <span style="color: #28a745; font-weight: bold;">{{ number_format($order->paid_amount, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</span>
-            </div>
-            @endif
-            @if($order->due_amount > 0)
-            <div class="summary-row">
-                <span class="summary-label">Due Amount:</span>
-                <span style="color: #dc3545; font-weight: bold;">{{ number_format($order->due_amount, 2) }} {{ $siteSettings->currency_symbol ?? '৳' }}</span>
-            </div>
-            @endif
-        </div>
-
-        @if($order->notes)
-        <div style="margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 5px;">
-            <strong>Notes:</strong> {{ $order->notes }}
-        </div>
-        @endif
-
-        <div class="footer">
-            <p>Thank you for your business!</p>
-            <p>{{ $siteSettings->business_name ?? $siteSettings->title ?? 'e3shopbd' }}</p>
-            @if($siteSettings->business_registration_number)
-                <p>Registration: {{ $siteSettings->business_registration_number }}</p>
-            @endif
-            @if($siteSettings->tax_number)
-                <p>Tax ID: {{ $siteSettings->tax_number }}</p>
-            @endif
-        </div>
     </div>
-</body>
-</html>
 
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th class="text-left">DESCRIPTION</th>
+                <th class="text-center">Quantity</th>
+                <th class="text-right">Unit Price BDT</th>
+                <th class="text-right">Total Price BDT</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($items as $item)
+                <tr>
+                    <td style="width: 55%;">
+                        <table style="width: 100%;">
+                            <tr>
+                                @if(isset($item->product->image_url) && !empty($item->product->image_url))
+                                    <td style="width: 60px; padding-right: 15px;"><img src="{{ $item->product->image_url }}"
+                                            style="width: 60px; height: 60px; object-fit: cover;" alt=""></td>
+                                @else
+                                    <td style="width: 60px; padding-right: 15px;">
+                                        <div
+                                            style="width: 60px; height: 60px; background-color: #eee; text-align: center; line-height: 60px; font-size: 10px; color: #999;">
+                                            Image</div>
+                                    </td>
+                                @endif
+                                <td style="vertical-align: top;">
+                                    <div class="item-meta">Order no: {{ $order->order_number }}</div>
+                                    <div class="item-desc font-bold">{{ $item->product_name ?? 'Product Description' }}
+                                    </div>
+                                    <div class="item-meta">
+                                        @if(isset($item->variant->sku))
+                                            Color: {{ $item->variant->color->name ?? '--' }} &nbsp;&nbsp; Size:
+                                            {{ $item->variant->size->name ?? '--' }} &nbsp;&nbsp; Model:
+                                            {{ $item->product->model ?? '--' }}
+                                        @else
+                                            Color: -- &nbsp;&nbsp; Size: -- &nbsp;&nbsp; Model:
+                                            {{ $item->product->model ?? '--' }}
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                    <td class="text-center" style="vertical-align: middle;">
+                        {{ str_pad($item->quantity, 2, '0', STR_PAD_LEFT) }}</td>
+                    <td class="text-right" style="vertical-align: middle;">{{ number_format($item->price, 2) }} <span
+                            style="font-size: 9px; color: #777;">BDT</span></td>
+                    <td class="text-right" style="vertical-align: middle;">{{ number_format($item->total, 2) }} <span
+                            style="font-size: 9px; color: #777;">BDT</span></td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+
+    <div class="total-payable">
+        <table>
+            <tr>
+                <td class="text-left" style="color: #555;">Total Payable</td>
+                <td class="text-right">{{ number_format($order->total_amount, 2) }} <span
+                        style="font-size: 10px; color: #777;">BDT</span></td>
+            </tr>
+        </table>
+    </div>
+
+    <table class="footer-section">
+        <tr>
+            <td class="payment-info">
+                <h4>Payment instruction</h4>
+                <div class="we-accept">We accept</div>
+                <div class="payment-logos">
+                    <span class="payment-logo bkash" style="color:#e2136e;">bKash</span>
+                    <span class="payment-logo nagad" style="color:#f37021;">Nagad</span>
+                    <span class="payment-logo" style="color: #333;">BANK</span>
+                </div>
+                <div class="note-sec">
+                    <h4>Note:</h4>
+                    <p>{{ $siteSettings->invoice_note ?? 'Thank you for your business. Please retain this invoice for your records. For any inquiries, contact our support team.' }}
+                    </p>
+                </div>
+            </td>
+            <td style="width: 50%;">
+                <table class="summary-table">
+                    <tr>
+                        <td class="label">Subtotal:</td>
+                        <td class="value">BDT {{ number_format($order->subtotal, 2) }}</td>
+                    </tr>
+                    @if($order->discount_amount > 0)
+                        <tr>
+                            <td class="label">Discount @if($order->coupon_code) ({{ $order->coupon_code }}) @endif:</td>
+                            <td class="value">BDT {{ number_format($order->discount_amount, 2) }}</td>
+                        </tr>
+                    @endif
+                    <tr>
+                        <td class="label">Shipping Cost:</td>
+                        <td class="value">BDT {{ number_format($order->shipping_cost, 2) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Sales Tax:</td>
+                        <td class="value">BDT {{ number_format($order->tax_amount, 2) }}</td>
+                    </tr>
+                    <tr class="total-row">
+                        <td class="label">Total:</td>
+                        <td class="value">BDT {{ number_format($order->total_amount, 2) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="label" style="font-weight: normal;">Amount paid:</td>
+                        <td class="value" style="font-weight: normal;">BDT {{ number_format($order->paid_amount, 2) }}
+                        </td>
+                    </tr>
+                    <tr class="balance-row">
+                        <td class="label">Balance Due:</td>
+                        <td class="value">BDT {{ number_format($order->due_amount, 2) }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+
+</html>

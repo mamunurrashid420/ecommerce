@@ -99,7 +99,7 @@ class Order extends Model
      */
     public function hasPendingCancellationRequest(): bool
     {
-        return $this->cancellation_requested_at !== null 
+        return $this->cancellation_requested_at !== null
             && $this->status !== 'cancelled';
     }
 
@@ -110,7 +110,7 @@ class Order extends Model
      */
     public function canBeCancelled(): bool
     {
-        return in_array($this->status, ['pending', 'processing']);
+        return in_array($this->status, ['pending', 'confirm']);
     }
 
     /**

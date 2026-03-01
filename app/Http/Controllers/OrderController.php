@@ -28,6 +28,7 @@ class OrderController extends Controller
         try {
             $filters = [
                 'status' => $request->get('status'),
+                'payment_status' => $request->get('payment_status'),
                 'customer_id' => $request->get('customer_id'),
                 'search' => $request->get('search'),
                 'date_from' => $request->get('date_from'),
@@ -63,12 +64,13 @@ class OrderController extends Controller
             if ($this->isAdmin()) {
                 return $this->index($request);
             }
-            
+
             // For customers, return only their orders
             $customer = $this->getAuthenticatedCustomer();
-            
+
             $filters = [
                 'status' => $request->get('status'),
+                'payment_status' => $request->get('payment_status'),
                 'search' => $request->get('search'),
                 'sort_by' => $request->get('sort_by', 'created_at'),
                 'sort_order' => $request->get('sort_order', 'desc'),
@@ -174,7 +176,7 @@ class OrderController extends Controller
     {
         try {
             $nextStatuses = $this->orderService->getValidNextStatuses($order->status);
-            
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -201,36 +203,17 @@ class OrderController extends Controller
         try {
             // Get all statuses and their transitions
             $allStatuses = [
-                'cancelled',
-                'pending_payment',
-                'pending_payment_verification',
-                'partially_paid',
-                'purchasing',
-                'purchase_completed',
-                'shipped_from_supplier',
-                'received_in_china_warehouse',
-                'on_the_way_to_china_airport',
-                'received_in_china_airport',
-                'on_the_way_to_bd_airport',
-                'received_in_bd_airport',
-                'on_the_way_to_bd_warehouse',
-                'received_in_bd_warehouse',
-                'processing_for_delivery',
-                'on_the_way_to_delivery',
-                'completed',
-                'processing_for_refund',
-                'refunded',
                 'pending',
-                'processing',
-                'shipped',
+                'confirm',
+                'cancelled',
                 'delivered',
             ];
-            
+
             $transitions = [];
             foreach ($allStatuses as $status) {
                 $transitions[$status] = $this->orderService->getValidNextStatuses($status);
             }
-            
+
             return response()->json([
                 'success' => true,
                 'data' => $transitions
@@ -256,7 +239,7 @@ class OrderController extends Controller
             $request->validate([
                 'status' => [
                     'required',
-                    'in:cancelled,pending_payment,pending_payment_verification,partially_paid,purchasing,purchase_completed,shipped_from_supplier,received_in_china_warehouse,on_the_way_to_china_airport,received_in_china_airport,on_the_way_to_bd_airport,received_in_bd_airport,on_the_way_to_bd_warehouse,received_in_bd_warehouse,processing_for_delivery,on_the_way_to_delivery,completed,processing_for_refund,refunded,pending,processing,shipped,delivered'
+                    'in:pending,confirm,cancelled,delivered'
                 ],
                 'notes' => 'nullable|string|max:1000',
             ]);
@@ -265,14 +248,14 @@ class OrderController extends Controller
             $user = auth()->user();
             $changedByType = null;
             $changedById = null;
-            
+
             if ($user instanceof \App\Models\User) {
                 $changedByType = 'admin';
                 $changedById = $user->id;
             }
 
             $result = $this->orderService->updateOrderStatus(
-                $order->id, 
+                $order->id,
                 $request->status,
                 $changedByType,
                 $changedById,
@@ -293,7 +276,51 @@ class OrderController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'Failed to update status',
+                'error' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Update order payment status (Admin)
+     * 
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function updatePaymentStatus(Request $request, int $id): \Illuminate\Http\JsonResponse
+    {
+        try {
+            $request->validate([
+                'payment_status' => [
+                    'required',
+                    'in:pending,partially_paid,paid,refunded'
+                ],
+                'notes' => 'nullable|string|max:1000',
+            ]);
+
+            $result = $this->orderService->updatePaymentStatus(
+                $id,
+                $request->payment_status,
+                'admin',
+                auth()->id(),
+                $request->notes
+            );
+
+            return response()->json($result);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update payment status',
+                'error' => $e->getMessage()
             ], 400);
         }
     }
@@ -327,7 +354,7 @@ class OrderController extends Controller
             ]);
 
             // Remove null values
-            $amounts = array_filter($amounts, function($value) {
+            $amounts = array_filter($amounts, function ($value) {
                 return $value !== null;
             });
 
@@ -507,7 +534,7 @@ class OrderController extends Controller
             ]);
 
             $user = auth()->user();
-            
+
             if (!$user) {
                 return response()->json([
                     'success' => false,
@@ -517,7 +544,7 @@ class OrderController extends Controller
 
             // Determine who is cancelling
             $cancelledBy = $this->isAdmin() ? 'admin' : 'customer';
-            
+
             // If customer, verify ownership
             if ($cancelledBy === 'customer') {
                 if (!($user instanceof \App\Models\Customer)) {
@@ -526,7 +553,7 @@ class OrderController extends Controller
                         'message' => 'Customer authentication required for this action'
                     ], 403);
                 }
-                
+
                 if ($order->customer_id !== $user->id) {
                     return response()->json([
                         'success' => false,
@@ -661,7 +688,7 @@ class OrderController extends Controller
         try {
             // Check authentication - support both Bearer token and token query parameter
             $token = $request->bearerToken() ?? $request->query('token');
-            
+
             if ($token) {
                 // Validate token from query parameter
                 $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($token);
@@ -713,7 +740,7 @@ class OrderController extends Controller
 
             // Get file path
             $filePath = \Illuminate\Support\Facades\Storage::disk('public')->path($orderModel->invoice_path);
-            
+
             // Return file for viewing (inline) instead of download
             return response()->file($filePath, [
                 'Content-Type' => 'application/pdf',
@@ -768,7 +795,7 @@ class OrderController extends Controller
 
             // Get file path
             $filePath = \Illuminate\Support\Facades\Storage::disk('public')->path($orderModel->invoice_path);
-            
+
             // Return file download response
             return response()->download($filePath, 'invoice_' . $orderModel->order_number . '.pdf', [
                 'Content-Type' => 'application/pdf',
@@ -791,7 +818,7 @@ class OrderController extends Controller
     protected function getAuthenticatedCustomer()
     {
         $user = auth()->user();
-        
+
         if (!$user) {
             throw new \Exception('Unauthenticated');
         }
@@ -814,7 +841,7 @@ class OrderController extends Controller
     protected function isAdmin()
     {
         $user = auth()->user();
-        
+
         if (!$user) {
             return false;
         }

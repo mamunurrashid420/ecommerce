@@ -56,41 +56,41 @@ class OrderService
     public function createOrder(array $data, int $customerId): array
     {
         DB::beginTransaction();
-        
+
         try {
             // Validate customer exists
             $customer = Customer::findOrFail($customerId);
-            
+
             // Check if customer is banned or suspended
             if ($customer->isBanned()) {
                 throw new Exception("Your account has been banned. Reason: " . ($customer->ban_reason ?? 'No reason provided'));
             }
-            
+
             if ($customer->isSuspended()) {
                 throw new Exception("Your account has been suspended. Reason: " . ($customer->suspend_reason ?? 'No reason provided'));
             }
-            
+
             // Validate customer can make purchase
             $this->purchaseService->validateCustomer($customerId);
-            
+
             // Validate purchase items with database locks to prevent race conditions
             $items = $data['items'];
             $validation = $this->purchaseService->validatePurchaseItemsWithLock($items);
             $validatedItems = $validation['validated_items'];
-            
+
             // Generate unique order number
             $orderNumber = $this->generateOrderNumber();
-            
+
             // Get site settings for shipping and tax calculations
             $siteSettings = \App\Models\SiteSetting::getInstance();
-            
+
             // Calculate subtotal from validated items
             $subtotal = $validation['total_amount'];
             $discountAmount = 0;
             $afterDiscountAmount = $subtotal;
             $couponId = null;
             $couponCode = null;
-            
+
             // Apply coupon if provided
             if (!empty($data['coupon_code'])) {
                 try {
@@ -99,7 +99,7 @@ class OrderService
                         $items,
                         $customerId
                     );
-                    
+
                     $subtotal = $couponResult['subtotal'];
                     $discountAmount = $couponResult['discount_amount'];
                     $afterDiscountAmount = $couponResult['total_after_discount'];
@@ -115,7 +115,7 @@ class OrderService
                     // Continue without coupon
                 }
             }
-            
+
             // Calculate shipping cost
             $shippingCost = 0;
             if ($siteSettings->free_shipping_threshold && $afterDiscountAmount >= $siteSettings->free_shipping_threshold) {
@@ -123,12 +123,12 @@ class OrderService
             } else {
                 $shippingCost = $siteSettings->shipping_cost ?? 0;
             }
-            
+
             // Calculate tax
             $taxRate = $siteSettings->tax_rate ?? 0;
             $taxInclusive = $siteSettings->tax_inclusive ?? false;
             $taxAmount = 0;
-            
+
             if ($taxRate > 0) {
                 if ($taxInclusive) {
                     // Tax is already included in product prices
@@ -139,13 +139,13 @@ class OrderService
                     $taxAmount = $afterDiscountAmount * ($taxRate / 100);
                 }
             }
-            
+
             // Calculate final total
             $totalAmount = $afterDiscountAmount + $shippingCost;
             if (!$taxInclusive && $taxAmount > 0) {
                 $totalAmount += $taxAmount;
             }
-            
+
             // Create order
             $order = Order::create([
                 'order_number' => $orderNumber,
@@ -163,7 +163,7 @@ class OrderService
                 'shipping_address' => $data['shipping_address'],
                 'notes' => $data['notes'] ?? null,
             ]);
-            
+
             // Record initial status in history
             OrderStatusHistory::create([
                 'order_id' => $order->id,
@@ -173,7 +173,7 @@ class OrderService
                 'changed_by_id' => $customerId,
                 'notes' => 'Order created',
             ]);
-            
+
             // Create order items and reserve stock
             foreach ($validatedItems as $itemData) {
                 OrderItem::create([
@@ -183,7 +183,7 @@ class OrderService
                     'price' => $itemData['price'],
                     'total' => $itemData['total'],
                 ]);
-                
+
                 // Reserve stock using InventoryService
                 $this->inventoryService->reserveStock(
                     $itemData['product_id'],
@@ -191,7 +191,7 @@ class OrderService
                     $order->id
                 );
             }
-            
+
             // Record coupon usage if coupon was applied
             if ($couponId) {
                 $this->couponService->recordUsage(
@@ -203,12 +203,12 @@ class OrderService
                     $totalAmount
                 );
             }
-            
+
             DB::commit();
-            
+
             // Load customer relationship for notifications
             $order->load('customer');
-            
+
             // Send notifications to all admin users
             try {
                 $adminUsers = User::where('role', 'admin')->get();
@@ -222,22 +222,22 @@ class OrderService
                     'error' => $e->getMessage()
                 ]);
             }
-            
+
             // Load full order relationships for response
             $order->load(['customer', 'orderItems.product']);
-            
+
             $response = [
                 'success' => true,
                 'order' => $order,
             ];
-            
+
             // Include warnings if any
             if (!empty($validation['warnings'])) {
                 $response['warnings'] = $validation['warnings'];
             }
-            
+
             return $response;
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Order creation failed', [
@@ -259,46 +259,51 @@ class OrderService
     public function getOrders(array $filters = [], int $perPage = 15): array
     {
         $query = Order::with(['customer', 'orderItems.product', 'coupon']);
-        
+
         // Filter by status
         if (isset($filters['status']) && $filters['status']) {
             $query->where('status', $filters['status']);
         }
-        
+
+        // Filter by payment status
+        if (isset($filters['payment_status']) && $filters['payment_status']) {
+            $query->where('payment_status', $filters['payment_status']);
+        }
+
         // Filter by customer
         if (isset($filters['customer_id']) && $filters['customer_id']) {
             $query->where('customer_id', $filters['customer_id']);
         }
-        
+
         // Search by order number
         if (isset($filters['search']) && $filters['search']) {
             $search = $filters['search'];
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('order_number', 'like', "%{$search}%")
-                  ->orWhereHas('customer', function($q) use ($search) {
-                      $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%");
-                  });
+                    ->orWhereHas('customer', function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
             });
         }
-        
+
         // Date range filter
         if (isset($filters['date_from']) && $filters['date_from']) {
             $query->whereDate('created_at', '>=', $filters['date_from']);
         }
-        
+
         if (isset($filters['date_to']) && $filters['date_to']) {
             $query->whereDate('created_at', '<=', $filters['date_to']);
         }
-        
+
         // Sort
         $sortBy = $filters['sort_by'] ?? 'created_at';
         $sortOrder = $filters['sort_order'] ?? 'desc';
         $query->orderBy($sortBy, $sortOrder);
-        
+
         $orders = $query->paginate($perPage);
-        
+
         // Generate invoices for partially_paid orders that don't have one or have HTML invoice
         foreach ($orders->items() as $order) {
             if ($order->status === 'partially_paid' && (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'))) {
@@ -320,7 +325,7 @@ class OrderService
                 }
             }
         }
-        
+
         return [
             'success' => true,
             'data' => $orders->items(),
@@ -345,24 +350,29 @@ class OrderService
     {
         $query = Order::with(['orderItems.product', 'coupon'])
             ->where('customer_id', $customerId);
-        
+
         // Filter by status
         if (isset($filters['status']) && $filters['status']) {
             $query->where('status', $filters['status']);
         }
-        
+
+        // Filter by payment status
+        if (isset($filters['payment_status']) && $filters['payment_status']) {
+            $query->where('payment_status', $filters['payment_status']);
+        }
+
         // Search by order number
         if (isset($filters['search']) && $filters['search']) {
             $query->where('order_number', 'like', "%{$filters['search']}%");
         }
-        
+
         // Sort
         $sortBy = $filters['sort_by'] ?? 'created_at';
         $sortOrder = $filters['sort_order'] ?? 'desc';
         $query->orderBy($sortBy, $sortOrder);
-        
+
         $orders = $query->paginate($perPage);
-        
+
         // Generate invoices for partially_paid orders that don't have one or have HTML invoice
         foreach ($orders->items() as $order) {
             if ($order->status === 'partially_paid' && (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'))) {
@@ -384,7 +394,7 @@ class OrderService
                 }
             }
         }
-        
+
         return [
             'success' => true,
             'data' => $orders->items(),
@@ -408,12 +418,12 @@ class OrderService
     public function getOrder(int $orderId, ?int $customerId = null): array
     {
         $order = Order::with(['customer', 'orderItems.product', 'coupon', 'couponUsage', 'statusHistory'])->findOrFail($orderId);
-        
+
         // If customer ID is provided, verify ownership
         if ($customerId !== null && $order->customer_id !== $customerId) {
             throw new Exception('Unauthorized access to this order');
         }
-        
+
         // Generate invoice if order is partially_paid and doesn't have one or has HTML invoice
         if ($order->status === 'partially_paid' && (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'))) {
             try {
@@ -434,7 +444,7 @@ class OrderService
                 ]);
             }
         }
-        
+
         return [
             'success' => true,
             'order' => $order,
@@ -455,42 +465,22 @@ class OrderService
     public function updateOrderStatus(int $orderId, string $status, ?string $changedByType = null, ?int $changedById = null, ?string $notes = null): array
     {
         $validStatuses = [
-            'cancelled',
-            'pending_payment',
-            'pending_payment_verification',
-            'partially_paid',
-            'purchasing',
-            'purchase_completed',
-            'shipped_from_supplier',
-            'received_in_china_warehouse',
-            'on_the_way_to_china_airport',
-            'received_in_china_airport',
-            'on_the_way_to_bd_airport',
-            'received_in_bd_airport',
-            'on_the_way_to_bd_warehouse',
-            'received_in_bd_warehouse',
-            'processing_for_delivery',
-            'on_the_way_to_delivery',
-            'completed',
-            'processing_for_refund',
-            'refunded',
-            // Legacy statuses for backward compatibility
             'pending',
-            'processing',
-            'shipped',
+            'confirm',
+            'cancelled',
             'delivered',
         ];
-        
+
         if (!in_array($status, $validStatuses)) {
             throw new Exception("Invalid status. Must be one of: " . implode(', ', $validStatuses));
         }
-        
+
         DB::beginTransaction();
-        
+
         try {
             $order = Order::lockForUpdate()->findOrFail($orderId);
             $oldStatus = $order->status;
-            
+
             // Skip if status hasn't changed
             if ($oldStatus === $status) {
                 DB::commit();
@@ -502,13 +492,13 @@ class OrderService
                     'message' => 'Status unchanged'
                 ];
             }
-            
+
             // Validate status transition
             $this->validateStatusTransition($oldStatus, $status);
-            
+
             $order->status = $status;
             $order->save();
-            
+
             // Record status change in history
             OrderStatusHistory::create([
                 'order_id' => $order->id,
@@ -518,32 +508,32 @@ class OrderService
                 'changed_by_id' => $changedById,
                 'notes' => $notes,
             ]);
-            
+
             // Handle cancellation - stock release removed
             // No need to release stock on cancellation
-            
+
             DB::commit();
-            
+
             // Generate invoice and send SMS when status changes to partially_paid
             if ($status === 'partially_paid' && $oldStatus !== 'partially_paid') {
                 try {
                     // Reload order with relationships
                     $order->load(['customer', 'orderItems', 'coupon']);
-                    
+
                     // Generate invoice if not already generated
                     if (empty($order->invoice_path)) {
                         $invoicePath = $this->invoiceService->generateInvoice($order);
                         $order->invoice_path = $invoicePath;
                         $order->save();
                     }
-                    
+
                     // Send SMS to customer
                     if ($order->customer && $order->customer->phone) {
                         $invoiceUrl = $this->invoiceService->getInvoiceUrl($order->invoice_path);
                         $siteSettings = \App\Models\SiteSetting::getInstance();
                         $businessName = $siteSettings->business_name ?? $siteSettings->title ?? 'e3shopbd';
                         $currencySymbol = $siteSettings->currency_symbol ?? '৳';
-                        
+
                         $message = "Dear {$order->customer->name}, Your order #{$order->order_number} status has been updated to Partially Paid. ";
                         $message .= "Total Amount: {$order->total_amount} {$currencySymbol}. ";
                         $message .= "Paid: {$order->paid_amount} {$currencySymbol}. ";
@@ -554,10 +544,10 @@ class OrderService
                             $message .= "Invoice: {$invoiceUrl}";
                         }
                         $message .= " - {$businessName}";
-                        
+
                         $formattedPhone = $this->smsService->formatMobile($order->customer->phone);
                         $smsResult = $this->smsService->sendSms($formattedPhone, $message);
-                        
+
                         if (!$smsResult['success']) {
                             Log::warning('Failed to send SMS for order status update', [
                                 'order_id' => $order->id,
@@ -574,19 +564,119 @@ class OrderService
                     ]);
                 }
             }
-            
+
             return [
                 'success' => true,
                 'order' => $order->load(['customer', 'orderItems.product', 'statusHistory']),
                 'old_status' => $oldStatus,
                 'new_status' => $status,
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Order status update failed', [
                 'order_id' => $orderId,
                 'status' => $status,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Update order payment status
+     * 
+     * @param int $orderId
+     * @param string $paymentStatus
+     * @param string|null $changedByType
+     * @param int|null $changedById
+     * @param string|null $notes
+     * @return array
+     * @throws Exception
+     */
+    public function updatePaymentStatus(int $orderId, string $paymentStatus, ?string $changedByType = null, ?int $changedById = null, ?string $notes = null): array
+    {
+        $validStatuses = [
+            'pending',
+            'partially_paid',
+            'paid',
+            'refunded',
+        ];
+
+        if (!in_array($paymentStatus, $validStatuses)) {
+            throw new Exception("Invalid payment status: {$paymentStatus}");
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $order = Order::lockForUpdate()->findOrFail($orderId);
+            $oldPaymentStatus = $order->payment_status;
+
+            if ($oldPaymentStatus === $paymentStatus) {
+                DB::rollBack();
+                return [
+                    'success' => true,
+                    'message' => 'Payment status is already ' . $paymentStatus,
+                    'order' => $order->load(['customer', 'orderItems.product']),
+                ];
+            }
+
+            // Update the payment status
+            $order->payment_status = $paymentStatus;
+
+            if ($paymentStatus === 'paid') {
+                $order->paid_amount = $order->total_amount;
+                $order->due_amount = 0;
+                $order->paid_at = $order->paid_at ?? now();
+
+                // If payment becomes paid, automatically update order status to confirm
+                if ($order->status === 'pending') {
+                    $order->status = 'confirm';
+                }
+            } else if ($paymentStatus === 'pending') {
+                $order->paid_amount = 0;
+                $order->due_amount = $order->total_amount;
+                $order->paid_at = null;
+            }
+
+            $order->save();
+
+            DB::commit();
+
+            // Generate invoice if paid and missing
+            if ($paymentStatus === 'paid' && empty($order->invoice_path)) {
+                try {
+                    $invoicePath = $this->invoiceService->generateInvoice($order->fresh(['customer', 'orderItems', 'coupon']));
+                    $order->invoice_path = $invoicePath;
+                    $order->save();
+                } catch (\Exception $e) {
+                    Log::error('Failed to generate invoice after payment status update', [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            Log::info('Order payment status updated', [
+                'order_id' => $orderId,
+                'old_payment_status' => $oldPaymentStatus,
+                'new_payment_status' => $paymentStatus,
+                'changed_by_type' => $changedByType,
+                'changed_by_id' => $changedById,
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Payment status updated successfully',
+                'order' => $order->fresh(['customer', 'orderItems.product']),
+            ];
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to update order payment status', [
+                'order_id' => $orderId,
+                'payment_status' => $paymentStatus,
                 'error' => $e->getMessage()
             ]);
             throw $e;
@@ -604,94 +694,94 @@ class OrderService
     public function updateOrderAmounts(int $orderId, array $amounts): array
     {
         DB::beginTransaction();
-        
+
         try {
             $order = Order::lockForUpdate()->findOrFail($orderId);
-            
+
             // Validate amounts
             if (isset($amounts['subtotal']) && (!is_numeric($amounts['subtotal']) || $amounts['subtotal'] < 0)) {
                 throw new Exception('Subtotal must be a non-negative number');
             }
-            
+
             if (isset($amounts['discount_amount']) && (!is_numeric($amounts['discount_amount']) || $amounts['discount_amount'] < 0)) {
                 throw new Exception('Discount amount must be a non-negative number');
             }
-            
+
             if (isset($amounts['shipping_cost']) && (!is_numeric($amounts['shipping_cost']) || $amounts['shipping_cost'] < 0)) {
                 throw new Exception('Shipping cost must be a non-negative number');
             }
-            
+
             if (isset($amounts['tax_amount']) && (!is_numeric($amounts['tax_amount']) || $amounts['tax_amount'] < 0)) {
                 throw new Exception('Tax amount must be a non-negative number');
             }
-            
+
             if (isset($amounts['tax_rate']) && (!is_numeric($amounts['tax_rate']) || $amounts['tax_rate'] < 0)) {
                 throw new Exception('Tax rate must be a non-negative number');
             }
-            
+
             // Update amounts
             if (isset($amounts['subtotal'])) {
                 $order->subtotal = $amounts['subtotal'];
             }
-            
+
             if (isset($amounts['discount_amount'])) {
                 $order->discount_amount = $amounts['discount_amount'];
             }
-            
+
             if (isset($amounts['shipping_cost'])) {
                 $order->shipping_cost = $amounts['shipping_cost'];
             }
-            
+
             if (isset($amounts['tax_amount'])) {
                 $order->tax_amount = $amounts['tax_amount'];
             }
-            
+
             if (isset($amounts['tax_rate'])) {
                 $order->tax_rate = $amounts['tax_rate'];
             }
-            
+
             if (isset($amounts['tax_inclusive'])) {
                 $order->tax_inclusive = (bool) $amounts['tax_inclusive'];
             }
-            
+
             // Recalculate total amount
             $subtotal = $order->subtotal ?? 0;
             $discountAmount = $order->discount_amount ?? 0;
             $shippingCost = $order->shipping_cost ?? 0;
             $taxAmount = $order->tax_amount ?? 0;
-            
+
             $totalAmount = $subtotal - $discountAmount + $shippingCost;
-            
+
             // Add tax if not inclusive
             if (!$order->tax_inclusive) {
                 $totalAmount += $taxAmount;
             }
-            
+
             $order->total_amount = $totalAmount;
-            
+
             // Update payment status to 'paid' if it was 'pending' and set paid_at timestamp
             if ($order->payment_status === 'pending') {
                 $order->payment_status = 'paid';
                 $order->paid_at = now();
             }
-            
+
             $order->save();
-            
+
             DB::commit();
-            
+
             Log::info('Order amounts updated', [
                 'order_id' => $orderId,
                 'amounts' => $amounts,
                 'new_total' => $totalAmount,
                 'payment_status_updated' => $order->payment_status === 'paid'
             ]);
-            
+
             return [
                 'success' => true,
                 'message' => 'Order amounts updated successfully',
                 'order' => $order->load(['customer', 'orderItems.product']),
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Order amounts update failed', [
@@ -713,38 +803,38 @@ class OrderService
     public function deleteOrder(int $orderId): array
     {
         DB::beginTransaction();
-        
+
         try {
             $order = Order::lockForUpdate()->findOrFail($orderId);
-            
+
             // Prevent deletion of delivered orders
             if ($order->status === 'delivered') {
                 throw new Exception('Cannot delete delivered orders. Consider cancelling instead.');
             }
-            
+
             // Stock release removed - no need to release stock on deletion
-            
+
             $orderData = [
                 'id' => $order->id,
                 'order_number' => $order->order_number,
                 'total_amount' => $order->total_amount,
                 'status' => $order->status,
             ];
-            
+
             // Delete order items
             $order->orderItems()->delete();
-            
+
             // Delete order
             $order->delete();
-            
+
             DB::commit();
-            
+
             return [
                 'success' => true,
                 'message' => 'Order deleted successfully',
                 'order' => $orderData,
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Order deletion failed', [
@@ -764,25 +854,25 @@ class OrderService
     public function getOrderStats(array $filters = []): array
     {
         $baseQuery = Order::query();
-        
+
         // Apply date filters if provided
         if (isset($filters['date_from']) && $filters['date_from']) {
             $baseQuery->whereDate('created_at', '>=', $filters['date_from']);
         }
-        
+
         if (isset($filters['date_to']) && $filters['date_to']) {
             $baseQuery->whereDate('created_at', '<=', $filters['date_to']);
         }
-        
+
         $totalOrders = (clone $baseQuery)->count();
         $totalRevenue = (clone $baseQuery)->sum('total_amount');
-        
+
         $statusCounts = (clone $baseQuery)
             ->select('status', DB::raw('count(*) as count'))
             ->groupBy('status')
             ->pluck('count', 'status')
             ->toArray();
-        
+
         return [
             'success' => true,
             'stats' => [
@@ -808,15 +898,15 @@ class OrderService
     public function getValidNextStatuses(string $currentStatus): array
     {
         $validTransitions = $this->getStatusTransitions();
-        
+
         // Always allow cancellation from any status (except already cancelled)
         $nextStatuses = $validTransitions[$currentStatus] ?? [];
-        
+
         // Add cancelled if not already in the list and current status is not cancelled
         if ($currentStatus !== 'cancelled' && !in_array('cancelled', $nextStatuses)) {
             $nextStatuses[] = 'cancelled';
         }
-        
+
         return $nextStatuses;
     }
 
@@ -828,30 +918,10 @@ class OrderService
     private function getStatusTransitions(): array
     {
         return [
+            'pending' => ['confirm', 'cancelled'],
+            'confirm' => ['delivered', 'cancelled'],
             'cancelled' => [],
-            'pending_payment' => ['pending_payment_verification', 'cancelled'],
-            'pending_payment_verification' => ['partially_paid', 'purchasing', 'cancelled'],
-            'partially_paid' => ['pending_payment_verification', 'purchasing', 'cancelled'],
-            'purchasing' => ['purchase_completed', 'cancelled'],
-            'purchase_completed' => ['shipped_from_supplier', 'cancelled'],
-            'shipped_from_supplier' => ['received_in_china_warehouse', 'cancelled'],
-            'received_in_china_warehouse' => ['on_the_way_to_china_airport', 'cancelled'],
-            'on_the_way_to_china_airport' => ['received_in_china_airport', 'cancelled'],
-            'received_in_china_airport' => ['on_the_way_to_bd_airport', 'cancelled'],
-            'on_the_way_to_bd_airport' => ['received_in_bd_airport', 'cancelled'],
-            'received_in_bd_airport' => ['on_the_way_to_bd_warehouse', 'cancelled'],
-            'on_the_way_to_bd_warehouse' => ['received_in_bd_warehouse', 'cancelled'],
-            'received_in_bd_warehouse' => ['processing_for_delivery', 'cancelled'],
-            'processing_for_delivery' => ['on_the_way_to_delivery', 'cancelled'],
-            'on_the_way_to_delivery' => ['completed', 'cancelled'],
-            'completed' => [], // Final state
-            'processing_for_refund' => ['refunded', 'cancelled'],
-            'refunded' => [], // Final state
-            // Legacy statuses for backward compatibility
-            'pending' => ['partially_paid', 'pending_payment_verification', 'processing', 'cancelled'],
-            'processing' => ['purchasing', 'shipped', 'cancelled'],
-            'shipped' => ['on_the_way_to_delivery', 'delivered', 'cancelled'],
-            'delivered' => ['completed'], // Can transition to completed
+            'delivered' => [],
         ];
     }
 
@@ -866,16 +936,16 @@ class OrderService
     private function validateStatusTransition(string $oldStatus, string $newStatus): void
     {
         $validTransitions = $this->getStatusTransitions();
-        
+
         // Allow transition to cancelled from any status (except already cancelled)
         if ($newStatus === 'cancelled' && $oldStatus !== 'cancelled') {
             return; // Allow cancellation from any status
         }
-        
+
         if (!isset($validTransitions[$oldStatus])) {
             throw new Exception("Invalid current status: {$oldStatus}");
         }
-        
+
         if (!in_array($newStatus, $validTransitions[$oldStatus])) {
             throw new Exception("Cannot transition from '{$oldStatus}' to '{$newStatus}'");
         }
@@ -893,31 +963,31 @@ class OrderService
     public function requestCancellation(int $orderId, int $customerId, ?string $reason = null): array
     {
         DB::beginTransaction();
-        
+
         try {
             $order = Order::lockForUpdate()->findOrFail($orderId);
-            
+
             // Verify ownership
             if ($order->customer_id !== $customerId) {
                 throw new Exception('Unauthorized access to this order');
             }
-            
+
             // Check if order can request cancellation
             if (!$order->canRequestCancellation()) {
                 throw new Exception('Order cannot be cancelled. Only pending orders without existing cancellation requests can be cancelled.');
             }
-            
+
             // Set cancellation request
             $order->cancellation_requested_at = now();
             $order->cancellation_reason = $reason;
             $order->cancellation_requested_by = 'customer';
             $order->save();
-            
+
             DB::commit();
-            
+
             // Load customer relationship for notifications
             $order->load('customer');
-            
+
             // Send notifications to all admin users
             try {
                 $adminUsers = User::where('role', 'admin')->get();
@@ -931,19 +1001,19 @@ class OrderService
                     'error' => $e->getMessage()
                 ]);
             }
-            
+
             Log::info('Order cancellation requested', [
                 'order_id' => $orderId,
                 'customer_id' => $customerId,
                 'reason' => $reason
             ]);
-            
+
             return [
                 'success' => true,
                 'message' => 'Cancellation request submitted successfully. Waiting for admin approval.',
                 'order' => $order->load(['customer', 'orderItems.product']),
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Order cancellation request failed', [
@@ -965,35 +1035,35 @@ class OrderService
     public function approveCancellation(int $orderId): array
     {
         DB::beginTransaction();
-        
+
         try {
             $order = Order::lockForUpdate()->findOrFail($orderId);
-            
+
             // Check if there's a pending cancellation request
             if (!$order->hasPendingCancellationRequest()) {
                 throw new Exception('No pending cancellation request found for this order');
             }
-            
+
             // Check if order can still be cancelled
             if (!$order->canBeCancelled()) {
                 throw new Exception("Order cannot be cancelled. Current status: {$order->status}");
             }
-            
+
             $oldStatus = $order->status;
-            
+
             // Cancel the order
             $order->status = 'cancelled';
             $order->cancelled_at = now();
             $order->cancelled_by = 'admin';
             $order->save();
-            
+
             // Stock release removed - no need to release stock on cancellation
-            
+
             DB::commit();
-            
+
             // Load customer relationship for notifications
             $order->load('customer');
-            
+
             // Send notification to customer
             try {
                 $order->customer->notify(new OrderCancellationApprovedNotification($order));
@@ -1005,12 +1075,12 @@ class OrderService
                     'error' => $e->getMessage()
                 ]);
             }
-            
+
             Log::info('Order cancellation approved', [
                 'order_id' => $orderId,
                 'old_status' => $oldStatus
             ]);
-            
+
             return [
                 'success' => true,
                 'message' => 'Order cancellation approved successfully',
@@ -1018,7 +1088,7 @@ class OrderService
                 'old_status' => $oldStatus,
                 'new_status' => 'cancelled',
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Order cancellation approval failed', [
@@ -1040,28 +1110,28 @@ class OrderService
     public function rejectCancellation(int $orderId, ?string $adminNote = null): array
     {
         DB::beginTransaction();
-        
+
         try {
             $order = Order::lockForUpdate()->findOrFail($orderId);
-            
+
             // Check if there's a pending cancellation request
             if (!$order->hasPendingCancellationRequest()) {
                 throw new Exception('No pending cancellation request found for this order');
             }
-            
+
             // Clear cancellation request
             $order->cancellation_requested_at = null;
-            $order->cancellation_reason = $adminNote ? 
-                ($order->cancellation_reason . "\n\nAdmin Note: " . $adminNote) : 
+            $order->cancellation_reason = $adminNote ?
+                ($order->cancellation_reason . "\n\nAdmin Note: " . $adminNote) :
                 $order->cancellation_reason;
             $order->cancellation_requested_by = null;
             $order->save();
-            
+
             DB::commit();
-            
+
             // Load customer relationship for notifications
             $order->load('customer');
-            
+
             // Send notification to customer
             try {
                 $order->customer->notify(new OrderCancellationRejectedNotification($order, $adminNote));
@@ -1073,18 +1143,18 @@ class OrderService
                     'error' => $e->getMessage()
                 ]);
             }
-            
+
             Log::info('Order cancellation rejected', [
                 'order_id' => $orderId,
                 'admin_note' => $adminNote
             ]);
-            
+
             return [
                 'success' => true,
                 'message' => 'Cancellation request rejected',
                 'order' => $order->load(['customer', 'orderItems.product']),
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Order cancellation rejection failed', [
@@ -1107,27 +1177,27 @@ class OrderService
     public function cancelOrder(int $orderId, string $cancelledBy, ?string $reason = null): array
     {
         DB::beginTransaction();
-        
+
         try {
             $order = Order::lockForUpdate()->findOrFail($orderId);
-            
+
             // Validate cancelled_by value
             if (!in_array($cancelledBy, ['customer', 'admin'])) {
                 throw new Exception("Invalid cancelled_by value. Must be 'customer' or 'admin'");
             }
-            
+
             // Check if order can be cancelled
             if (!$order->canBeCancelled()) {
                 throw new Exception("Order cannot be cancelled. Current status: {$order->status}");
             }
-            
+
             // If customer is cancelling, verify ownership
             if ($cancelledBy === 'customer') {
                 // This will be checked in the controller
             }
-            
+
             $oldStatus = $order->status;
-            
+
             // Cancel the order
             $order->status = 'cancelled';
             $order->cancelled_at = now();
@@ -1137,14 +1207,14 @@ class OrderService
             $order->cancellation_requested_at = null;
             $order->cancellation_requested_by = null;
             $order->save();
-            
+
             // Stock release removed - no need to release stock on cancellation
-            
+
             DB::commit();
-            
+
             // Load customer relationship for notifications
             $order->load('customer');
-            
+
             // Send notification to customer
             try {
                 $order->customer->notify(new OrderCancelledNotification($order));
@@ -1156,14 +1226,14 @@ class OrderService
                     'error' => $e->getMessage()
                 ]);
             }
-            
+
             Log::info('Order cancelled directly', [
                 'order_id' => $orderId,
                 'cancelled_by' => $cancelledBy,
                 'old_status' => $oldStatus,
                 'reason' => $reason
             ]);
-            
+
             return [
                 'success' => true,
                 'message' => 'Order cancelled successfully',
@@ -1171,7 +1241,7 @@ class OrderService
                 'old_status' => $oldStatus,
                 'new_status' => 'cancelled',
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Order cancellation failed', [
@@ -1195,41 +1265,41 @@ class OrderService
         $query = Order::with(['customer', 'orderItems.product', 'coupon'])
             ->whereNotNull('cancellation_requested_at')
             ->where('status', '!=', 'cancelled');
-        
+
         // Filter by customer
         if (isset($filters['customer_id']) && $filters['customer_id']) {
             $query->where('customer_id', $filters['customer_id']);
         }
-        
+
         // Search by order number
         if (isset($filters['search']) && $filters['search']) {
             $search = $filters['search'];
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('order_number', 'like', "%{$search}%")
-                  ->orWhereHas('customer', function($q) use ($search) {
-                      $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%");
-                  });
+                    ->orWhereHas('customer', function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
             });
         }
-        
+
         // Date range filter
         if (isset($filters['date_from']) && $filters['date_from']) {
             $query->whereDate('cancellation_requested_at', '>=', $filters['date_from']);
         }
-        
+
         if (isset($filters['date_to']) && $filters['date_to']) {
             $query->whereDate('cancellation_requested_at', '<=', $filters['date_to']);
         }
-        
+
         // Sort
         $sortBy = $filters['sort_by'] ?? 'cancellation_requested_at';
         $sortOrder = $filters['sort_order'] ?? 'desc';
         $query->orderBy($sortBy, $sortOrder);
-        
+
         $orders = $query->paginate($perPage);
-        
+
         return [
             'success' => true,
             'data' => $orders->items(),
@@ -1253,22 +1323,22 @@ class OrderService
     public function bulkUpdatePartialPayment(array $orderIds): array
     {
         DB::beginTransaction();
-        
+
         try {
             $orders = Order::lockForUpdate()->whereIn('id', $orderIds)->get();
-            
+
             if ($orders->isEmpty()) {
                 throw new Exception('No orders found');
             }
-            
+
             $updated = [];
             $failed = [];
-            
+
             foreach ($orders as $order) {
                 try {
                     // Use the subtotal amount as the submitted payment amount
                     $paidAmount = $order->subtotal ?? 0;
-                    
+
                     // Validate paid amount doesn't exceed total amount
                     if ($paidAmount > $order->total_amount) {
                         $failed[] = [
@@ -1278,7 +1348,7 @@ class OrderService
                         ];
                         continue;
                     }
-                    
+
                     // Skip if no subtotal amount
                     if ($paidAmount <= 0) {
                         $failed[] = [
@@ -1288,12 +1358,12 @@ class OrderService
                         ];
                         continue;
                     }
-                    
+
                     $oldPaidAmount = $order->paid_amount ?? 0;
                     // Set paid_amount to subtotal and update due_amount
                     $order->paid_amount = $paidAmount;
                     $order->due_amount = $order->total_amount - $paidAmount;
-                    
+
                     // Update payment status
                     if ($paidAmount >= $order->total_amount) {
                         $order->payment_status = 'paid';
@@ -1303,37 +1373,19 @@ class OrderService
                     } else {
                         $order->payment_status = 'pending';
                     }
-                    
-                    // Update order status to partially_paid if payment is partial
-                    // Allow status update from pending, pending_payment, or pending_payment_verification
-                    $oldStatus = $order->status;
-                    $shouldUpdateStatus = $paidAmount > 0 && 
-                                        $paidAmount < $order->total_amount && 
-                                        in_array($order->status, ['pending', 'pending_payment', 'pending_payment_verification']);
-                    
-                    if ($shouldUpdateStatus) {
-                        $order->status = 'partially_paid';
-                        
-                        // Record status change
-                        OrderStatusHistory::create([
-                            'order_id' => $order->id,
-                            'old_status' => $oldStatus,
-                            'new_status' => 'partially_paid',
-                            'changed_by_type' => 'admin',
-                            'changed_by_id' => auth()->id(),
-                            'notes' => 'Bulk partial payment approval',
-                        ]);
-                    }
-                    
+
+                    // Note: previously we updated order status to partially_paid here. 
+                    // Now, payment status is entirely separate.
+
                     $order->save();
-                    
+
                     $updated[] = [
                         'order_id' => $order->id,
                         'order_number' => $order->order_number,
                         'old_paid_amount' => $oldPaidAmount,
                         'new_paid_amount' => $paidAmount,
                     ];
-                    
+
                 } catch (Exception $e) {
                     $failed[] = [
                         'order_id' => $order->id,
@@ -1346,22 +1398,21 @@ class OrderService
                     ]);
                 }
             }
-            
+
             DB::commit();
-            
+
             // Generate invoices for partially_paid orders
             foreach ($updated as $update) {
                 try {
                     $order = Order::with(['customer', 'orderItems', 'coupon'])->find($update['order_id']);
                     if ($order) {
                         // Generate invoice if:
-                        // 1. Order status is partially_paid (regardless of whether it was just updated), OR
-                        // 2. Payment status is partially_paid and order doesn't have invoice, OR
-                        // 3. Invoice is HTML format (needs to be regenerated as PDF)
-                        $isPartiallyPaid = $order->status === 'partially_paid' || $order->payment_status === 'partially_paid';
-                        $shouldGenerateInvoice = $isPartiallyPaid && 
-                                               (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'));
-                        
+                        // 1. Payment status is paid or partially_paid and order doesn't have invoice, OR
+                        // 2. Invoice is HTML format (needs to be regenerated as PDF)
+                        $isPaidOrPartiallyPaid = in_array($order->payment_status, ['paid', 'partially_paid']);
+                        $shouldGenerateInvoice = $isPaidOrPartiallyPaid &&
+                            (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'));
+
                         if ($shouldGenerateInvoice) {
                             // Delete old invoice if exists
                             if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
@@ -1379,14 +1430,14 @@ class OrderService
                     ]);
                 }
             }
-            
+
             return [
                 'success' => true,
                 'message' => count($updated) . ' order(s) updated successfully',
                 'updated' => $updated,
                 'failed' => $failed,
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Bulk partial payment update failed', [
@@ -1407,22 +1458,22 @@ class OrderService
     public function bulkMakePaid(array $orderIds): array
     {
         DB::beginTransaction();
-        
+
         try {
             $orders = Order::lockForUpdate()->whereIn('id', $orderIds)->get();
-            
+
             if ($orders->isEmpty()) {
                 throw new Exception('No orders found');
             }
-            
+
             $updated = [];
             $failed = [];
-            
+
             foreach ($orders as $order) {
                 try {
                     $oldPaymentStatus = $order->payment_status;
-                    $wasPartiallyPaid = $order->payment_status === 'partially_paid' || $order->status === 'partially_paid';
-                    
+                    $wasPartiallyPaid = $order->payment_status === 'partially_paid';
+
                     // Set paid amount to total amount if not already set
                     if ($order->paid_amount < $order->total_amount) {
                         $order->paid_amount = $order->total_amount;
@@ -1430,9 +1481,9 @@ class OrderService
                     $order->due_amount = 0;
                     $order->payment_status = 'paid';
                     $order->paid_at = now();
-                    
+
                     $order->save();
-                    
+
                     $updated[] = [
                         'order_id' => $order->id,
                         'order_number' => $order->order_number,
@@ -1440,7 +1491,7 @@ class OrderService
                         'new_payment_status' => 'paid',
                         'was_partially_paid' => $wasPartiallyPaid,
                     ];
-                    
+
                 } catch (Exception $e) {
                     $failed[] = [
                         'order_id' => $order->id,
@@ -1453,9 +1504,9 @@ class OrderService
                     ]);
                 }
             }
-            
+
             DB::commit();
-            
+
             // Generate invoices for orders that don't have one or were partially paid
             foreach ($updated as $update) {
                 try {
@@ -1465,10 +1516,10 @@ class OrderService
                         // 1. Order doesn't have an invoice, OR
                         // 2. Order was partially paid and now fully paid (regenerate invoice), OR
                         // 3. Invoice is HTML format (needs to be regenerated as PDF)
-                        $shouldGenerateInvoice = empty($order->invoice_path) || 
-                                                $update['was_partially_paid'] || 
-                                                (str_ends_with($order->invoice_path, '.html'));
-                        
+                        $shouldGenerateInvoice = empty($order->invoice_path) ||
+                            $update['was_partially_paid'] ||
+                            (str_ends_with($order->invoice_path, '.html'));
+
                         if ($shouldGenerateInvoice) {
                             // Delete old invoice if exists
                             if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
@@ -1486,14 +1537,14 @@ class OrderService
                     ]);
                 }
             }
-            
+
             return [
                 'success' => true,
                 'message' => count($updated) . ' order(s) updated successfully',
                 'updated' => $updated,
                 'failed' => $failed,
             ];
-            
+
         } catch (Exception $e) {
             DB::rollBack();
             Log::error('Bulk make paid failed', [
@@ -1514,7 +1565,7 @@ class OrderService
         do {
             $orderNumber = 'ORD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
         } while (Order::where('order_number', $orderNumber)->exists());
-        
+
         return $orderNumber;
     }
 }

@@ -81,6 +81,7 @@ Route::prefix('landing')->group(function () {
     Route::get('/hero', [LandingPageController::class, 'hero']);
     Route::get('/featured-products', [LandingPageController::class, 'featuredProducts']);
     Route::get('/top-selling-products', [LandingPageController::class, 'topSellingProducts']);
+    Route::get('/mobile', [LandingPageController::class, 'combinedData']);
 });
 
 // Public site settings (for frontend)
@@ -363,6 +364,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/orders/{order}/reject-cancellation', [OrderController::class, 'rejectCancellation'])
             ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
         Route::get('/orders/{order}/invoice/download', [OrderController::class, 'downloadInvoice'])
+            ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
+        Route::put('/orders/{order}/payment-status', [OrderController::class, 'updatePaymentStatus'])
             ->where('order', '^(?!stats$|pending-cancellations$|status-transitions$).*$');
         // Exclude 'stats', 'pending-cancellations', and 'status-transitions' from matching as order ID
         Route::put('/orders/{order}', [OrderController::class, 'update'])
