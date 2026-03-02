@@ -1401,27 +1401,18 @@ class OrderService
 
             DB::commit();
 
-            // Generate invoices for partially_paid orders
+            // Always regenerate invoices for all successfully updated orders
             foreach ($updated as $update) {
                 try {
                     $order = Order::with(['customer', 'orderItems', 'coupon'])->find($update['order_id']);
                     if ($order) {
-                        // Generate invoice if:
-                        // 1. Payment status is paid or partially_paid and order doesn't have invoice, OR
-                        // 2. Invoice is HTML format (needs to be regenerated as PDF)
-                        $isPaidOrPartiallyPaid = in_array($order->payment_status, ['paid', 'partially_paid']);
-                        $shouldGenerateInvoice = $isPaidOrPartiallyPaid &&
-                            (empty($order->invoice_path) || str_ends_with($order->invoice_path, '.html'));
-
-                        if ($shouldGenerateInvoice) {
-                            // Delete old invoice if exists
-                            if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
-                                Storage::disk('public')->delete($order->invoice_path);
-                            }
-                            $invoicePath = $this->invoiceService->generateInvoice($order);
-                            $order->invoice_path = $invoicePath;
-                            $order->save();
+                        // Delete old invoice if exists
+                        if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
+                            Storage::disk('public')->delete($order->invoice_path);
                         }
+                        $invoicePath = $this->invoiceService->generateInvoice($order);
+                        $order->invoice_path = $invoicePath;
+                        $order->save();
                     }
                 } catch (Exception $e) {
                     Log::warning('Failed to generate invoice for order', [
@@ -1507,28 +1498,18 @@ class OrderService
 
             DB::commit();
 
-            // Generate invoices for orders that don't have one or were partially paid
+            // Always regenerate invoices for all successfully updated orders
             foreach ($updated as $update) {
                 try {
                     $order = Order::with(['customer', 'orderItems', 'coupon'])->find($update['order_id']);
                     if ($order) {
-                        // Generate invoice if:
-                        // 1. Order doesn't have an invoice, OR
-                        // 2. Order was partially paid and now fully paid (regenerate invoice), OR
-                        // 3. Invoice is HTML format (needs to be regenerated as PDF)
-                        $shouldGenerateInvoice = empty($order->invoice_path) ||
-                            $update['was_partially_paid'] ||
-                            (str_ends_with($order->invoice_path, '.html'));
-
-                        if ($shouldGenerateInvoice) {
-                            // Delete old invoice if exists
-                            if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
-                                Storage::disk('public')->delete($order->invoice_path);
-                            }
-                            $invoicePath = $this->invoiceService->generateInvoice($order);
-                            $order->invoice_path = $invoicePath;
-                            $order->save();
+                        // Delete old invoice if exists
+                        if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
+                            Storage::disk('public')->delete($order->invoice_path);
                         }
+                        $invoicePath = $this->invoiceService->generateInvoice($order);
+                        $order->invoice_path = $invoicePath;
+                        $order->save();
                     }
                 } catch (Exception $e) {
                     Log::warning('Failed to generate invoice for order in bulk make paid', [
