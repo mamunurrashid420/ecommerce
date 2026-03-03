@@ -272,18 +272,19 @@ Route::middleware('auth.any')->group(function () {
     Route::get('/support-tickets/navbar/count', [SupportTicketController::class, 'navbarCount']);
     Route::get('/support-tickets/navbar/latest', [SupportTicketController::class, 'navbarLatest']);
 
-    // Support Ticket routes - accessible to both customers and admins
-    // Exclude 'stats' and 'navbar' from matching as ticket ID
-    Route::get('/support-tickets/{ticket}', [SupportTicketController::class, 'show'])
-        ->where('ticket', '^(?!stats$|navbar).*$');
-
-    // Support Message routes - accessible to both customers and admins
+    // Support Message routes - must come before single {ticket} route
     // Exclude 'stats' and 'navbar' from matching as ticket ID
     Route::get('/support-tickets/{ticket}/messages', [SupportMessageController::class, 'index'])
         ->where('ticket', '^(?!stats$|navbar).*$');
     Route::post('/support-tickets/{ticket}/messages', [SupportMessageController::class, 'store'])
         ->where('ticket', '^(?!stats$|navbar).*$');
     Route::put('/support-messages/{message}/read', [SupportMessageController::class, 'markAsRead']);
+
+    // Support Ticket routes - accessible to both customers and admins
+    // Exclude 'stats' and 'navbar' from matching as ticket ID
+    // This must come AFTER /support-tickets/{ticket}/messages routes
+    Route::get('/support-tickets/{ticket}', [SupportTicketController::class, 'show'])
+        ->where('ticket', '^(?!stats$|navbar).*$');
 });
 
 // Protected routes (Admin/User authentication)
