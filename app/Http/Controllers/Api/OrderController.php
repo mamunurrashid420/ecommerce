@@ -769,6 +769,7 @@ class OrderController extends Controller
                 'discount_amount' => $orderDiscount,
                 'shipping_cost' => $shippingCost,
                 'shipping_method' => $request->shipping_method ?? 'ship',
+                'delivery_type' => $request->delivery_type ?? null,
                 'tax_amount' => $taxAmount,
                 'tax_rate' => $taxRate,
                 'tax_inclusive' => $taxInclusive,

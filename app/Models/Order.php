@@ -18,6 +18,7 @@ class Order extends Model
         'discount_amount',
         'shipping_cost',
         'shipping_method',
+        'delivery_type',
         'tax_amount',
         'tax_rate',
         'tax_inclusive',
