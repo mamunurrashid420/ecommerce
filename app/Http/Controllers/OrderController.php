@@ -228,7 +228,7 @@ class OrderController extends Controller
 
     /**
      * Update order status (Admin only)
-     * 
+     *
      * @param Request $request
      * @param Order $order
      * @return \Illuminate\Http\JsonResponse
@@ -239,7 +239,7 @@ class OrderController extends Controller
             $request->validate([
                 'status' => [
                     'required',
-                    'in:pending,confirm,cancelled,delivered'
+                    'in:pending,confirm,purchasing,purchase_completed,shipped_from_supplier,received_in_china_warehouse,on_the_way_to_china_airport,received_in_china_airport,on_the_way_to_bd_airport,received_in_bd_airport,on_the_way_to_bd_warehouse,received_in_bd_warehouse,processing_for_delivery,on_the_way_to_delivery,delivered,completed,processing_for_refund,refunded,cancelled'
                 ],
                 'notes' => 'nullable|string|max:1000',
             ]);

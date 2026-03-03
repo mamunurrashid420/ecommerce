@@ -472,6 +472,7 @@ class OrderController extends Controller
                         'status' => $order->status,
                         'payment_method' => $order->payment_method,
                         'payment_status' => $order->payment_status,
+                        'delivery_type' => $order->delivery_type,
                         'items_count' => $order->orderItems->count(),
                         'created_at' => $order->created_at,
                     ];
@@ -754,7 +755,27 @@ class OrderController extends Controller
             $dueAmount = $totalOriginalPrice - $paidAmount; // 30% of original
 
             // Generate unique order number
-            $orderNumber = 'ORD-' . strtoupper(uniqid()) . '-' . time();
+            // Format: ORDYYMMDD#### (e.g., ORD2603030001)
+            $today = date('ymd'); // YYMMDD format
+
+            // Get count of orders created today
+            $todayStart = date('Y-m-d 00:00:00');
+            $todayEnd = date('Y-m-d 23:59:59');
+
+            $todayOrderCount = Order::whereBetween('created_at', [$todayStart, $todayEnd])->count();
+
+            // Increment for the new order
+            $orderSequence = str_pad($todayOrderCount + 1, 4, '0', STR_PAD_LEFT);
+
+            $orderNumber = 'ORD' . $today . $orderSequence;
+
+            // Ensure uniqueness (in case of race conditions)
+            $counter = 1;
+            while (Order::where('order_number', $orderNumber)->exists()) {
+                $orderSequence = str_pad($todayOrderCount + 1 + $counter, 4, '0', STR_PAD_LEFT);
+                $orderNumber = 'ORD' . $today . $orderSequence;
+                $counter++;
+            }
 
             // Create order
             $order = Order::create([

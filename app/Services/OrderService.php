@@ -1582,14 +1582,33 @@ class OrderService
 
     /**
      * Generate unique order number
-     * 
+     * Format: ORDYYMMDD#### (e.g., ORD2603030001)
+     *
      * @return string
      */
     private function generateOrderNumber(): string
     {
-        do {
-            $orderNumber = 'ORD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
-        } while (Order::where('order_number', $orderNumber)->exists());
+        $today = date('ymd'); // YYMMDD format
+
+        // Get count of orders created today
+        $todayStart = date('Y-m-d 00:00:00');
+        $todayEnd = date('Y-m-d 23:59:59');
+
+        $todayOrderCount = Order::whereBetween('created_at', [$todayStart, $todayEnd])->count();
+
+        // Increment for the new order
+        $orderSequence = str_pad($todayOrderCount + 1, 4, '0', STR_PAD_LEFT);
+
+        $orderNumber = 'ORD' . $today . $orderSequence;
+
+        // Ensure uniqueness (in case of race conditions)
+        $counter = 1;
+        $originalOrderNumber = $orderNumber;
+        while (Order::where('order_number', $orderNumber)->exists()) {
+            $orderSequence = str_pad($todayOrderCount + 1 + $counter, 4, '0', STR_PAD_LEFT);
+            $orderNumber = 'ORD' . $today . $orderSequence;
+            $counter++;
+        }
 
         return $orderNumber;
     }
