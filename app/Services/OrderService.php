@@ -18,6 +18,7 @@ use App\Services\PurchaseService;
 use App\Services\CouponService;
 use App\Services\InvoiceService;
 use App\Services\SmsService;
+use App\Jobs\GenerateInvoiceJob;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -1445,25 +1446,9 @@ class OrderService
 
             DB::commit();
 
-            // Always regenerate invoices for all successfully updated orders
+            // Dispatch invoice generation as background jobs to avoid blocking the HTTP response
             foreach ($updated as $update) {
-                try {
-                    $order = Order::with(['customer', 'orderItems', 'coupon'])->find($update['order_id']);
-                    if ($order) {
-                        // Delete old invoice if exists
-                        if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
-                            Storage::disk('public')->delete($order->invoice_path);
-                        }
-                        $invoicePath = $this->invoiceService->generateInvoice($order);
-                        $order->invoice_path = $invoicePath;
-                        $order->save();
-                    }
-                } catch (Exception $e) {
-                    Log::warning('Failed to generate invoice for order', [
-                        'order_id' => $update['order_id'],
-                        'error' => $e->getMessage()
-                    ]);
-                }
+                GenerateInvoiceJob::dispatch($update['order_id'], true);
             }
 
             return [
@@ -1542,25 +1527,9 @@ class OrderService
 
             DB::commit();
 
-            // Always regenerate invoices for all successfully updated orders
+            // Dispatch invoice generation as background jobs to avoid blocking the HTTP response
             foreach ($updated as $update) {
-                try {
-                    $order = Order::with(['customer', 'orderItems', 'coupon'])->find($update['order_id']);
-                    if ($order) {
-                        // Delete old invoice if exists
-                        if (!empty($order->invoice_path) && Storage::disk('public')->exists($order->invoice_path)) {
-                            Storage::disk('public')->delete($order->invoice_path);
-                        }
-                        $invoicePath = $this->invoiceService->generateInvoice($order);
-                        $order->invoice_path = $invoicePath;
-                        $order->save();
-                    }
-                } catch (Exception $e) {
-                    Log::warning('Failed to generate invoice for order in bulk make paid', [
-                        'order_id' => $update['order_id'],
-                        'error' => $e->getMessage()
-                    ]);
-                }
+                GenerateInvoiceJob::dispatch($update['order_id'], true);
             }
 
             return [

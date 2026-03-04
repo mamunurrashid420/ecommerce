@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\OrderService;
+use App\Services\InvoiceService;
 use App\Models\Order;
 use App\Models\Customer;
 use Illuminate\Http\Request;
@@ -11,10 +12,12 @@ use Illuminate\Validation\ValidationException;
 class OrderController extends Controller
 {
     protected $orderService;
+    protected $invoiceService;
 
-    public function __construct(OrderService $orderService)
+    public function __construct(OrderService $orderService, InvoiceService $invoiceService)
     {
-        $this->orderService = $orderService;
+        $this->orderService  = $orderService;
+        $this->invoiceService = $invoiceService;
     }
 
     /**
@@ -690,23 +693,14 @@ class OrderController extends Controller
             $token = $request->bearerToken() ?? $request->query('token');
 
             if ($token) {
-                // Validate token from query parameter
                 $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($token);
                 if (!$accessToken) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Unauthorized'
-                    ], 401);
+                    return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
                 }
-                // Set the authenticated user
                 auth()->setUser($accessToken->tokenable);
             } else {
-                // If no token provided, check if user is authenticated via session/middleware
                 if (!auth()->check()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Unauthorized'
-                    ], 401);
+                    return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
                 }
             }
 
@@ -716,36 +710,11 @@ class OrderController extends Controller
                 ->first();
 
             if (!$orderModel) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Order not found'
-                ], 404);
+                return response()->json(['success' => false, 'message' => 'Order not found'], 404);
             }
 
-            // Check if invoice exists
-            if (empty($orderModel->invoice_path)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invoice not found for this order'
-                ], 404);
-            }
-
-            // Check if file exists
-            if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($orderModel->invoice_path)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invoice file not found'
-                ], 404);
-            }
-
-            // Get file path
-            $filePath = \Illuminate\Support\Facades\Storage::disk('public')->path($orderModel->invoice_path);
-
-            // Return file for viewing (inline) instead of download
-            return response()->file($filePath, [
-                'Content-Type' => 'application/pdf',
-                'Content-Disposition' => 'inline; filename="invoice_' . $orderModel->order_number . '.pdf"',
-            ]);
+            // Stream a freshly generated PDF so it always reflects current data & template
+            return $this->invoiceService->streamInvoice($orderModel);
 
         } catch (\Exception $e) {
             return response()->json([
@@ -771,35 +740,11 @@ class OrderController extends Controller
                 ->first();
 
             if (!$orderModel) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Order not found'
-                ], 404);
+                return response()->json(['success' => false, 'message' => 'Order not found'], 404);
             }
 
-            // Check if invoice exists
-            if (empty($orderModel->invoice_path)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invoice not found for this order'
-                ], 404);
-            }
-
-            // Check if file exists
-            if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($orderModel->invoice_path)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invoice file not found'
-                ], 404);
-            }
-
-            // Get file path
-            $filePath = \Illuminate\Support\Facades\Storage::disk('public')->path($orderModel->invoice_path);
-
-            // Return file download response
-            return response()->download($filePath, 'invoice_' . $orderModel->order_number . '.pdf', [
-                'Content-Type' => 'application/pdf',
-            ]);
+            // Download a freshly generated PDF so it always reflects current data & template
+            return $this->invoiceService->downloadInvoicePdf($orderModel);
 
         } catch (\Exception $e) {
             return response()->json([

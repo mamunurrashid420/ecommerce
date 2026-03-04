@@ -173,25 +173,31 @@
             margin-bottom: 6px;
         }
 
-        .we-accept {
-            font-size: 10.5px;
-            color: #666;
-            margin-bottom: 8px;
+        .pm-block {
+            margin-bottom: 10px;
         }
 
-        .payment-badges {
-            margin-bottom: 18px;
+        .pm-name {
+            font-size: 11px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 4px;
         }
 
-        .pay-badge {
-            display: inline-block;
-            padding: 4px 10px;
-            border: 1.5px solid #ccc;
-            border-radius: 4px;
+        .pm-details-heading {
+            background-color: #00e5e5;
             font-size: 10px;
             font-weight: bold;
-            margin-right: 5px;
-            color: #333;
+            text-decoration: underline;
+            color: #000;
+            padding: 3px 6px;
+            margin-bottom: 4px;
+        }
+
+        .pm-info-row {
+            font-size: 10px;
+            color: #222;
+            line-height: 1.7;
         }
 
         .note-section h4 {
@@ -272,8 +278,8 @@
     <table class="header-table">
         <tr>
             <td style="width:50%; vertical-align:top;">
-                @if(isset($siteSettings->logo) && $siteSettings->logo)
-                    <img src="{{ url($siteSettings->logo) }}" style="max-height:90px; max-width:120px;" alt="Logo">
+                @if(isset($siteSettings->header_logo) && $siteSettings->header_logo)
+                    <img src="{{ $siteSettings->header_logo_url }}" style="max-height:90px; max-width:120px;" alt="Logo">
                 @else
                     {{-- Placeholder circular logo --}}
                     <div
@@ -424,18 +430,19 @@
             {{-- Payment & Note column --}}
             <td class="payment-col">
                 <h4>Payment instruction</h4>
-                <div class="we-accept">We accept</div>
-                <div class="payment-badges">
-                    @if(isset($paymentMethods) && $paymentMethods->count() > 0)
-                        @foreach($paymentMethods as $pm)
-                            <span class="pay-badge">{{ $pm->name }}</span>
-                        @endforeach
-                    @else
-                        <span class="pay-badge">bKash</span>
-                        <span class="pay-badge">Nagad</span>
-                        <span class="pay-badge">BANK</span>
-                    @endif
-                </div>
+                @if(isset($paymentMethods) && $paymentMethods->count() > 0)
+                    @foreach($paymentMethods as $pm)
+                        <div class="pm-block">
+                            <div class="pm-name">{{ $pm->name }}</div>
+                            <div class="pm-details-heading">The Beneficiary's details are as below.</div>
+                            @if(!empty($pm->information))
+                                @foreach($pm->information as $info)
+                                    <div class="pm-info-row">{{ $info['label_name'] }}: {{ $info['label_value'] }}</div>
+                                @endforeach
+                            @endif
+                        </div>
+                    @endforeach
+                @endif
                 <div class="note-section">
                     <h4>Note:</h4>
                     <p>{{ $siteSettings->invoice_note ?? 'Thank you for your business. Please retain this invoice for your records. For any inquiries, contact our support team.' }}
