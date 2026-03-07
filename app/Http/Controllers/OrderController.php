@@ -16,7 +16,7 @@ class OrderController extends Controller
 
     public function __construct(OrderService $orderService, InvoiceService $invoiceService)
     {
-        $this->orderService  = $orderService;
+        $this->orderService = $orderService;
         $this->invoiceService = $invoiceService;
     }
 
@@ -342,6 +342,8 @@ class OrderController extends Controller
                 'subtotal' => 'nullable|numeric|min:0',
                 'discount_amount' => 'nullable|numeric|min:0',
                 'shipping_cost' => 'nullable|numeric|min:0',
+                'china_to_china_bill' => 'nullable|numeric|min:0',
+                'china_to_bangladesh_bill' => 'nullable|numeric|min:0',
                 'tax_amount' => 'nullable|numeric|min:0',
                 'tax_rate' => 'nullable|numeric|min:0|max:100',
                 'tax_inclusive' => 'nullable|boolean',
@@ -351,6 +353,8 @@ class OrderController extends Controller
                 'subtotal',
                 'discount_amount',
                 'shipping_cost',
+                'china_to_china_bill',
+                'china_to_bangladesh_bill',
                 'tax_amount',
                 'tax_rate',
                 'tax_inclusive'

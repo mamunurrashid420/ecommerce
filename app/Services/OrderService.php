@@ -727,6 +727,14 @@ class OrderService
                 throw new Exception('Shipping cost must be a non-negative number');
             }
 
+            if (isset($amounts['china_to_china_bill']) && (!is_numeric($amounts['china_to_china_bill']) || $amounts['china_to_china_bill'] < 0)) {
+                throw new Exception('China to China bill must be a non-negative number');
+            }
+
+            if (isset($amounts['china_to_bangladesh_bill']) && (!is_numeric($amounts['china_to_bangladesh_bill']) || $amounts['china_to_bangladesh_bill'] < 0)) {
+                throw new Exception('China to Bangladesh bill must be a non-negative number');
+            }
+
             if (isset($amounts['tax_amount']) && (!is_numeric($amounts['tax_amount']) || $amounts['tax_amount'] < 0)) {
                 throw new Exception('Tax amount must be a non-negative number');
             }
@@ -748,6 +756,14 @@ class OrderService
                 $order->shipping_cost = $amounts['shipping_cost'];
             }
 
+            if (isset($amounts['china_to_china_bill'])) {
+                $order->china_to_china_bill = $amounts['china_to_china_bill'];
+            }
+
+            if (isset($amounts['china_to_bangladesh_bill'])) {
+                $order->china_to_bangladesh_bill = $amounts['china_to_bangladesh_bill'];
+            }
+
             if (isset($amounts['tax_amount'])) {
                 $order->tax_amount = $amounts['tax_amount'];
             }
@@ -764,9 +780,11 @@ class OrderService
             $subtotal = $order->subtotal ?? 0;
             $discountAmount = $order->discount_amount ?? 0;
             $shippingCost = $order->shipping_cost ?? 0;
+            $chinaToChinaBill = $order->china_to_china_bill ?? 0;
+            $chinaToBangladeshBill = $order->china_to_bangladesh_bill ?? 0;
             $taxAmount = $order->tax_amount ?? 0;
 
-            $totalAmount = $subtotal - $discountAmount + $shippingCost;
+            $totalAmount = $subtotal - $discountAmount + $shippingCost + $chinaToChinaBill + $chinaToBangladeshBill;
 
             // Add tax if not inclusive
             if (!$order->tax_inclusive) {
