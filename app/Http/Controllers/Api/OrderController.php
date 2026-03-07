@@ -129,7 +129,7 @@ class OrderController extends Controller
             $couponCode = null;
             $couponId = null;
             $totalOrderSubtotal = 0;
-            
+
             if (!empty($request->coupon_code)) {
                 try {
                     // Calculate total subtotal from all items for coupon validation
@@ -142,7 +142,7 @@ class OrderController extends Controller
                             $quantity = isset($item['quantity']) ? intval($item['quantity']) : 1;
                             $itemPrice = $quantity > 0 ? floatval($item['subtotal']) / $quantity : 0;
                         }
-                        
+
                         $quantity = isset($item['quantity']) ? intval($item['quantity']) : 1;
                         if ($itemPrice > 0 && $quantity > 0) {
                             $couponItems[] = [
@@ -153,14 +153,14 @@ class OrderController extends Controller
                             ];
                         }
                     }
-                    
+
                     if (!empty($couponItems)) {
                         $couponResult = $this->couponService->validateAndCalculateDiscount(
                             $request->coupon_code,
                             $couponItems,
                             $customer->id
                         );
-                        
+
                         $couponDiscount = $couponResult['discount_amount'];
                         $couponCode = $couponResult['coupon']->code;
                         $couponId = $couponResult['coupon']->id;
@@ -184,7 +184,7 @@ class OrderController extends Controller
             foreach ($items as $item) {
                 // Get variations data - can be array or string
                 $variations = $item['variations'] ?? null;
-                
+
                 // Parse variations if it's a string
                 if (is_string($variations)) {
                     $decodedVariations = json_decode($variations, true);
@@ -225,7 +225,7 @@ class OrderController extends Controller
                         $totalOrderAmount += $order->subtotal;
                         $totalOrderAmountAfterDiscount += $order->total_amount;
                     }
-                    
+
                     $this->couponService->recordUsage(
                         $couponId,
                         $createdOrders[0]->id, // Use first order ID for reference
@@ -305,7 +305,7 @@ class OrderController extends Controller
 
                         foreach ($cartVariations as $cartVar) {
                             $cartVarId = $cartVar['id'] ?? $cartVar['sku_id'] ?? null;
-                            
+
                             // Check if this variation was ordered
                             $wasOrdered = false;
                             if ($cartVarId && in_array($cartVarId, $orderedVariationIds)) {
@@ -315,7 +315,7 @@ class OrderController extends Controller
                                     if ($cartVarId === $orderedVarId) {
                                         $orderedQty = intval($orderedVar['quantity'] ?? 0);
                                         $cartVarQty = intval($cartVar['quantity'] ?? 0);
-                                        
+
                                         if ($orderedQty >= $cartVarQty) {
                                             // All of this variation was ordered, remove it
                                             $wasOrdered = true;
@@ -512,6 +512,8 @@ class OrderController extends Controller
                     'due_amount' => $order->due_amount,
                     'discount_amount' => $order->discount_amount,
                     'shipping_cost' => $order->shipping_cost,
+                    'china_to_china_bill' => $order->china_to_china_bill,
+                    'china_to_bangladesh_bill' => $order->china_to_bangladesh_bill,
                     'shipping_method' => $order->shipping_method,
                     'tax_amount' => $order->tax_amount,
                     'tax_rate' => $order->tax_rate,
@@ -614,7 +616,7 @@ class OrderController extends Controller
 
                     // Get quantity from variation
                     $quantity = isset($variation['quantity']) ? intval($variation['quantity']) : intval($item['quantity'] ?? 1);
-                    
+
                     if ($quantity <= 0 || $itemPrice <= 0) {
                         continue; // Skip invalid variations
                     }
@@ -666,7 +668,7 @@ class OrderController extends Controller
                 }
 
                 $quantity = intval($item['quantity'] ?? 1);
-                
+
                 if ($quantity > 0 && $itemPrice > 0) {
                     // Calculate original price total (before discount)
                     $totalOriginalPrice = $itemPrice * $quantity;
@@ -727,12 +729,12 @@ class OrderController extends Controller
                 $orderDiscount = ($totalSubtotal / $totalOrderSubtotal) * $totalCouponDiscount;
                 $orderDiscount = round($orderDiscount, 2);
             }
-            
+
             $subtotalAfterDiscount = $totalSubtotal - $orderDiscount;
 
             // Calculate shipping cost (per order)
             $shippingCost = $settings->shipping_cost ?? 0;
-            
+
             // Calculate tax (on subtotal after discount)
             if ($taxInclusive) {
                 // Tax is already included in product prices
@@ -833,7 +835,7 @@ class OrderController extends Controller
 
             // Load order with items and status history
             $order->load('orderItems', 'statusHistory');
-            
+
             return $order;
         } catch (\Exception $e) {
             // Log error but continue with other orders
